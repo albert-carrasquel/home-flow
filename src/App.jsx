@@ -150,9 +150,9 @@ const App = () => {
     tipoActivo: '',
     cantidad: '',
     precioUnitario: '',
-    moneda: 'USD',
+    moneda: 'ARS',
     comision: '',
-    monedaComision: 'USD',
+    monedaComision: 'ARS',
     exchange: '',
     notas: '',
   });
@@ -257,10 +257,10 @@ const App = () => {
 
   const netBalance = totalInvestment - totalWithdrawal;
 
-  const formatCurrency = (amount) =>
+  const formatCurrency = (amount, moneda = 'ARS') =>
     new Intl.NumberFormat('es-AR', {
       style: 'currency',
-      currency: 'USD',
+      currency: moneda,
       minimumFractionDigits: 2,
     }).format(amount);
 
@@ -273,22 +273,46 @@ const App = () => {
 
   const handleAddTransaction = async (e) => {
     e.preventDefault();
-    // Validación básica
-    if (!db || !userId || !newTransaction.activo || !newTransaction.cantidad || !newTransaction.precioUnitario) {
-      setFormError('Completa los campos obligatorios: Activo, Cantidad y Precio Unitario.');
+    // Validaciones avanzadas
+    const errors = [];
+    // Validación de activo (assetSymbol)
+    const assetSymbol = (newTransaction.activo || '').toUpperCase();
+    if (!/^[A-Z]{2,10}$/.test(assetSymbol)) {
+      errors.push('El campo "Activo" debe contener solo letras (A-Z), entre 2 y 10 caracteres.');
+    }
+    // Validación de cantidad (amount)
+    if (!/^\d+(\.\d+)?$/.test(newTransaction.cantidad) || parseFloat(newTransaction.cantidad) <= 0) {
+      errors.push('La "Cantidad" debe ser un número positivo.');
+    }
+    // Validación de precioUnitario
+    if (!/^\d+(\.\d+)?$/.test(newTransaction.precioUnitario) || parseFloat(newTransaction.precioUnitario) <= 0) {
+      errors.push('El "Precio Unitario" debe ser un número positivo.');
+    }
+    // Validación de moneda
+    if (!/^[A-Z]{2,5}$/.test(newTransaction.moneda)) {
+      errors.push('El campo "Moneda" debe contener solo letras (A-Z), entre 2 y 5 caracteres.');
+    }
+    // Validación de monedaComision (si se completó)
+    if (newTransaction.monedaComision && !/^[A-Z]{2,5}$/.test(newTransaction.monedaComision)) {
+      errors.push('El campo "Moneda Comisión" debe contener solo letras (A-Z), entre 2 y 5 caracteres.');
+    }
+    if (errors.length > 0) {
+      setFormError(errors.join(' '));
       return;
     }
+    // Normalizamos el activo antes de guardar
+    const transactionToSave = {
+      ...newTransaction,
+      activo: assetSymbol,
+      cantidad: parseFloat(newTransaction.cantidad),
+      precioUnitario: parseFloat(newTransaction.precioUnitario),
+      montoTotal: parseFloat(newTransaction.cantidad) * parseFloat(newTransaction.precioUnitario),
+      usuarioId: userId,
+      fecha: serverTimestamp(),
+    };
     try {
       const transactionsPath = getTransactionsCollectionPath(appId);
-      const montoTotal = parseFloat(newTransaction.cantidad) * parseFloat(newTransaction.precioUnitario);
-      await addDoc(collection(db, transactionsPath), {
-        ...newTransaction,
-        cantidad: parseFloat(newTransaction.cantidad),
-        precioUnitario: parseFloat(newTransaction.precioUnitario),
-        montoTotal,
-        usuarioId: userId,
-        fecha: serverTimestamp(),
-      });
+      await addDoc(collection(db, transactionsPath), transactionToSave);
       setNewTransaction({
         tipoOperacion: 'compra',
         activo: '',
@@ -296,9 +320,9 @@ const App = () => {
         tipoActivo: '',
         cantidad: '',
         precioUnitario: '',
-        moneda: 'USD',
+        moneda: 'ARS',
         comision: '',
-        monedaComision: 'USD',
+        monedaComision: 'ARS',
         exchange: '',
         notas: '',
       });
@@ -876,7 +900,7 @@ const ConfirmationModal = ({ onConfirm, onCancel }) => (
 );
 
 // Tarjeta de métrica
-const MetricCard = ({ title, amount, icon: Icon, color, formatCurrency }) => {
+const MetricCard = ({ title, amount, icon: Icon, color, formatCurrency, moneda }) => {
   const colorClasses = {
     green: 'bg-green-500 text-white',
     red: 'bg-red-500 text-white',
@@ -893,17 +917,11 @@ const MetricCard = ({ title, amount, icon: Icon, color, formatCurrency }) => {
       <div className="flex justify-between items-start">
         <div>
           <p className="text-sm font-medium text-gray-500">{title}</p>
-          <h3
-            className={`text-3xl font-extrabold mt-1 ${
-              color === 'red' && amount < 0 ? 'text-red-600' : 'text-gray-900'
-            }`}
-          >
-            {formatCurrency(amount)}
+          <h3 className={`text-3xl font-extrabold mt-1 ${color === 'red' && amount < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+            {formatCurrency(amount, moneda)}
           </h3>
         </div>
-        <div
-          className={`p-3 rounded-full ${colorClasses[color]} shadow-lg ${shadowClass[color]}`}
-        >
+        <div className={`p-3 rounded-full ${colorClasses[color]} shadow-lg ${shadowClass[color]}`}>
           <Icon className="w-6 h-6" />
         </div>
       </div>
@@ -921,6 +939,7 @@ const TransactionItem = ({ transaction, formatCurrency, onDelete }) => {
     : 'Cargando fecha...';
   const userName = USER_NAMES[transaction.usuarioId] || 'Usuario';
   const token = (transaction.activo || '').toUpperCase();
+  const moneda = transaction.moneda || 'ARS';
 
   return (
     <div className="flex flex-col md:flex-row md:items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md transition duration-150 ease-in-out">
@@ -935,11 +954,15 @@ const TransactionItem = ({ transaction, formatCurrency, onDelete }) => {
           <p className="text-xs text-gray-500">{formattedDate}</p>
           <p className="text-xs text-indigo-700 font-bold">Token: {token}</p>
           <p className="text-xs text-gray-700">Usuario: {userName}</p>
+          <p className="text-xs text-gray-700">Tipo: {isCompra ? 'Compra' : 'Venta'}</p>
+          <p className="text-xs text-gray-700">Cantidad: {transaction.cantidad}</p>
+          <p className="text-xs text-gray-700">Precio Unitario: {formatCurrency(transaction.precioUnitario, moneda)}</p>
+          <p className="text-xs text-gray-700">Moneda: {moneda}</p>
         </div>
       </div>
       <div className="flex items-center space-x-3 mt-2 md:mt-0">
         <p className={`font-bold text-lg ${isCompra ? 'text-green-600' : 'text-red-600'}`}>
-          {formatCurrency(transaction.montoTotal || 0)}
+          {formatCurrency(transaction.montoTotal || 0, moneda)}
         </p>
         <button
           onClick={() => onDelete(transaction.id)}

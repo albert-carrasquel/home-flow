@@ -102,4 +102,10 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 - Se actualiza la UI y la lógica para mostrar el nombre en vez del email y para normalizar los tokens.
 ---
 
+**[2025-12-05] Mejora de reporte de operaciones y moneda por defecto**
+- El reporte de cada transacción ahora muestra el tipo de operación (compra o venta).
+- Se cambia la moneda por defecto de USD a ARS en el formulario y en la visualización.
+- Se mantiene la opción de cambiar la moneda en cada operación.
+---
+
 **Pendiente:** Definir estructura y campos para el modelo de usuario, incluyendo autenticación y permisos.
