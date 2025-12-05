@@ -338,7 +338,7 @@ service cloud.firestore {
       <header className="mb-8 p-4 bg-white shadow-lg rounded-xl">
         <h1 className="text-3xl font-extrabold text-indigo-700 flex items-center">
           <DollarSign className="w-8 h-8 mr-2 text-indigo-500" />
-          Gestor de Inversiones Compartido
+          Investment Manager
         </h1>
         <p className="text-sm text-gray-500 mt-1">
           Proyecto colaborativo usando React y Cloud Firestore.

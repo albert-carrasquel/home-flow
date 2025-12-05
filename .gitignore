@@ -37,6 +37,7 @@ lerna-debug.log*
 .turbo/
 .eslintcache
 .stylelintcache
+.dev-changedlog.md
 
 # Firebase
 .firebase/
