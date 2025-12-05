@@ -1,26 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { 
-  getAuth, 
-  signInAnonymously, 
-  signInWithCustomToken, 
+import {
+  getAuth,
+  signInAnonymously,
+  signInWithCustomToken,
+  signInWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup,
 } from 'firebase/auth';
-import { 
-  getFirestore, 
-  doc, 
-  addDoc, 
-  onSnapshot, 
-  collection, 
-  query, 
+import {
+  getFirestore,
+  doc,
+  addDoc,
+  onSnapshot,
+  collection,
+  query,
   serverTimestamp,
   deleteDoc,
   setLogLevel, // Importación de setLogLevel para depuración
 } from 'firebase/firestore';
-import { 
-  DollarSign, 
-  ArrowUpRight, 
-  ArrowDownLeft, 
-  Trash2, 
+import {
+  DollarSign,
+  ArrowUpRight,
+  ArrowDownLeft,
+  Trash2,
   X,
 } from 'lucide-react';
 
@@ -58,6 +61,81 @@ const initialAuthToken =
 const getTransactionsCollectionPath = (appId) =>
   `artifacts/${appId}/public/data/transactions`;
 
+// UIDs de los super admins permitidos
+const SUPER_ADMINS = [
+  '9dZMQNvgovSWE4lP7tOUNDzy6Md2', // Reemplaza por el UID real
+  'T0Kh0eHZ05he8iqD6vEG2G2c7Rl2', // Reemplaza por el UID real
+];
+
+// Mapeo de UID a nombre de usuario
+const USER_NAMES = {
+  '9dZMQNvgovSWE4lP7tOUNDzy6Md2': 'Albert Carrasquel',
+  'T0Kh0eHZ05he8iqD6vEG2G2c7Rl2': 'Haydee Macias',
+};
+
+const LoginForm = ({ onLogin, error }) => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleEmailLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await onLogin({ email, password });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
+      <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-sm">
+        <h2 className="text-2xl font-bold mb-6 text-indigo-700 text-center">
+          Iniciar Sesión
+        </h2>
+        {error && (
+          <div className="mb-4 text-red-700 text-sm">{error}</div>
+        )}
+        <form onSubmit={handleEmailLogin} className="space-y-4">
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+          />
+          <input
+            type="password"
+            placeholder="Contraseña"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-2 px-4 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 transition"
+          >
+            {loading ? 'Ingresando...' : 'Ingresar'}
+          </button>
+        </form>
+        <div className="mt-6 text-center">
+          <button
+            type="button"
+            onClick={() => onLogin({ google: true })}
+            className="w-full py-2 px-4 rounded-lg bg-red-500 text-white font-medium hover:bg-red-600 transition"
+          >
+            Ingresar con Google
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const App = () => {
   const [db, setDb] = useState(null);
   const [auth, setAuth] = useState(null);
@@ -66,15 +144,34 @@ const App = () => {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [newTransaction, setNewTransaction] = useState({
-    type: 'investment', // 'investment' o 'withdrawal'
-    amount: '',
-    name: '',
+    tipoOperacion: 'compra', // 'compra' o 'venta'
+    activo: '',
+    nombreActivo: '',
+    tipoActivo: '',
+    cantidad: '',
+    precioUnitario: '',
+    moneda: 'USD',
+    comision: '',
+    monedaComision: 'USD',
+    exchange: '',
+    notas: '',
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [formError, setFormError] = useState(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [docToDelete, setDocToDelete] = useState(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [loginError, setLoginError] = useState(null);
+  const [showLogin, setShowLogin] = useState(true);
+  // Mostrar nombre de usuario en vez de UID
+  const [userName, setUserName] = useState('');
+
+  // Filtros para consultas avanzadas
+  const [filtroActivo, setFiltroActivo] = useState('');
+  const [filtroUsuario, setFiltroUsuario] = useState('');
+  const [filtroFechaDesde, setFiltroFechaDesde] = useState('');
+  const [filtroFechaHasta, setFiltroFechaHasta] = useState('');
 
   // 1. Inicialización de Firebase y Autenticación
   useEffect(() => {
@@ -84,54 +181,15 @@ const App = () => {
       return;
     }
 
-    const runAuthAndInit = async () => {
-      try {
-        // Inicialización de la app
-        const app = initializeApp(firebaseConfig);
-        const firestore = getFirestore(app);
-        const firebaseAuth = getAuth(app);
-
-        // Logging de Firestore para depurar
-        setLogLevel('debug');
-
-        setDb(firestore);
-        setAuth(firebaseAuth);
-
-        let user = null;
-
-        // Autenticación: primero token custom, si no, anónima
-        if (initialAuthToken) {
-          const userCredential = await signInWithCustomToken(
-            firebaseAuth,
-            initialAuthToken,
-          );
-          user = userCredential.user;
-          console.log(
-            `Autenticación exitosa (Custom Token). User ID: ${user.uid}`,
-          );
-        } else {
-          const userCredential = await signInAnonymously(firebaseAuth);
-          user = userCredential.user;
-          console.log(
-            `Autenticación exitosa (Anónima). User ID: ${user.uid}`,
-          );
-        }
-
-        if (user) {
-          setUserId(user.uid);
-        }
-      } catch (e) {
-        console.error('Firebase Auth or Init failed:', e);
-        setError(
-          `Authentication failed: ${e.message}. Check console for details.`,
-        );
-      } finally {
-        setIsAuthReady(true);
-        setIsLoading(false);
-      }
-    };
-
-    runAuthAndInit();
+    // Inicialización de la app y servicios
+    const app = initializeApp(firebaseConfig);
+    const firestore = getFirestore(app);
+    const firebaseAuth = getAuth(app);
+    setLogLevel('debug');
+    setDb(firestore);
+    setAuth(firebaseAuth);
+    setIsAuthReady(true);
+    setIsLoading(false);
   }, []);
 
   // 2. Suscripción en tiempo real a las transacciones
@@ -179,6 +237,15 @@ const App = () => {
     return () => unsubscribe();
   }, [db, userId, isAuthReady]);
 
+  // Verificación de super admin
+  useEffect(() => {
+    if (userId) {
+      setIsSuperAdmin(SUPER_ADMINS.includes(userId));
+    } else {
+      setIsSuperAdmin(false);
+    }
+  }, [userId]);
+
   // Cálculo de métricas
   const totalInvestment = transactions
     .filter((t) => t.type === 'investment')
@@ -206,34 +273,39 @@ const App = () => {
 
   const handleAddTransaction = async (e) => {
     e.preventDefault();
-
-    if (!db || !userId || !newTransaction.amount || !newTransaction.name) {
-      setFormError(
-        'Por favor, completa el nombre y el monto antes de agregar la transacción.',
-      );
+    // Validación básica
+    if (!db || !userId || !newTransaction.activo || !newTransaction.cantidad || !newTransaction.precioUnitario) {
+      setFormError('Completa los campos obligatorios: Activo, Cantidad y Precio Unitario.');
       return;
     }
-
     try {
       const transactionsPath = getTransactionsCollectionPath(appId);
-      console.log(
-        `Firestore Path being used for addDoc (App ID: ${appId}, User ID: ${userId}): ${transactionsPath}`,
-      );
-
+      const montoTotal = parseFloat(newTransaction.cantidad) * parseFloat(newTransaction.precioUnitario);
       await addDoc(collection(db, transactionsPath), {
         ...newTransaction,
-        amount: parseFloat(newTransaction.amount),
-        userId: userId,
-        timestamp: serverTimestamp(),
+        cantidad: parseFloat(newTransaction.cantidad),
+        precioUnitario: parseFloat(newTransaction.precioUnitario),
+        montoTotal,
+        usuarioId: userId,
+        fecha: serverTimestamp(),
       });
-
-      setNewTransaction({ type: 'investment', amount: '', name: '' });
+      setNewTransaction({
+        tipoOperacion: 'compra',
+        activo: '',
+        nombreActivo: '',
+        tipoActivo: '',
+        cantidad: '',
+        precioUnitario: '',
+        moneda: 'USD',
+        comision: '',
+        monedaComision: 'USD',
+        exchange: '',
+        notas: '',
+      });
       setFormError(null);
     } catch (e) {
       console.error('Error adding transaction: ', e);
-      setError(
-        'Error al agregar la transacción. Revisa las reglas de seguridad de Firestore.',
-      );
+      setError('Error al agregar la transacción. Revisa las reglas de seguridad de Firestore.');
     }
   };
 
@@ -262,6 +334,61 @@ const App = () => {
       handleCancelDelete();
     }
   };
+
+  // Login handler
+  const handleLogin = async ({ email, password, google }) => {
+    setLoginError(null);
+    try {
+      if (google) {
+        const provider = new GoogleAuthProvider();
+        const userCredential = await signInWithPopup(auth, provider);
+        setUserId(userCredential.user.uid);
+      } else {
+        const userCredential = await signInWithEmailAndPassword(
+          auth,
+          email,
+          password,
+        );
+        setUserId(userCredential.user.uid);
+      }
+      setShowLogin(false);
+    } catch (e) {
+      setLoginError(e.message);
+    }
+  };
+
+  // Si ya hay usuario, no mostrar login
+  useEffect(() => {
+    if (userId) setShowLogin(false);
+  }, [userId]);
+
+  // Mostrar nombre de usuario
+  useEffect(() => {
+    if (userId && USER_NAMES[userId]) {
+      setUserName(USER_NAMES[userId]);
+    } else if (auth && userId) {
+      const user = auth.currentUser;
+      setUserName(user.displayName || user.email || 'Usuario');
+    }
+  }, [auth, userId]);
+
+  // Obtener lista de tokens únicos normalizados
+  const tokensRegistrados = Array.from(new Set(transactions.map(t => (t.activo || '').toUpperCase()).filter(Boolean)));
+
+  // Consulta filtrada mejorada
+  const transaccionesFiltradas = transactions.filter((t) => {
+    let ok = true;
+    if (filtroActivo && t.activo) ok = ok && t.activo.toUpperCase() === filtroActivo;
+    if (filtroUsuario && t.usuarioId) ok = ok && t.usuarioId === filtroUsuario;
+    if (filtroFechaDesde && t.fecha) ok = ok && t.fecha.toDate() >= new Date(filtroFechaDesde);
+    if (filtroFechaHasta && t.fecha) ok = ok && t.fecha.toDate() <= new Date(filtroFechaHasta);
+    return ok;
+  });
+
+  // Mostrar login si no está autenticado
+  if (showLogin && isAuthReady && !userId) {
+    return <LoginForm onLogin={handleLogin} error={loginError} />;
+  }
 
   // --- RENDER ---
 
@@ -320,7 +447,7 @@ service cloud.firestore {
         </p>
 
         <div className="mt-4 p-2 bg-red-300 rounded text-xs break-all">
-          <strong>Ruta de Firestore utilizada:</strong>{' '}
+          <strong>Ruta de Firestore utilizada:</strong> {' '}
           {getTransactionsCollectionPath(appId)}
           <br />
           <strong>User ID:</strong> {userId || 'No autenticado'}
@@ -328,6 +455,25 @@ service cloud.firestore {
           <span className="italic">
             Revisa la consola para el logging de depuración de Firestore.
           </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isSuperAdmin && isAuthReady) {
+    return (
+      <div className="flex flex-col justify-center items-center h-screen bg-gray-50">
+        <div className="p-8 bg-red-100 border border-red-400 text-red-700 rounded-lg max-w-lg mx-auto mt-10 shadow-xl">
+          <h2 className="text-2xl font-bold mb-4">Acceso Denegado</h2>
+          <p className="mb-2">
+            Tu usuario no tiene permisos para acceder a esta aplicación.
+          </p>
+          <p className="text-xs text-gray-600">
+            Contacta al administrador para solicitar acceso.
+          </p>
+          <div className="mt-4 p-2 bg-red-300 rounded text-xs break-all">
+            <strong>User ID detectado:</strong> {userId || 'No autenticado'}
+          </div>
         </div>
       </div>
     );
@@ -343,9 +489,9 @@ service cloud.firestore {
         <p className="text-sm text-gray-500 mt-1">
           Proyecto colaborativo usando React y Cloud Firestore.
         </p>
-        {userId && (
+        {userName && (
           <div className="mt-3 text-xs text-gray-600 p-2 bg-indigo-50 rounded-lg break-all">
-            <strong>Tu ID de Usuario (para colaboración):</strong> {userId}
+            <strong>Usuario:</strong> {userName}
           </div>
         )}
       </header>
@@ -375,18 +521,69 @@ service cloud.firestore {
             formatCurrency={formatCurrency}
           />
 
+          {/* Filtros de consulta mejorados */}
+          <div className="mb-6 p-4 bg-indigo-50 rounded-xl flex flex-col md:flex-row gap-4 items-center">
+            {/* Combo de usuario */}
+            <select
+              value={filtroUsuario}
+              onChange={(e) => setFiltroUsuario(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              <option value="">Todos los usuarios</option>
+              <option value="9dZMQNvgovSWE4lP7tOUNDzy6Md2">Albert Carrasquel</option>
+              <option value="T0Kh0eHZ05he8iqD6vEG2G2c7Rl2">Haydee Macias</option>
+            </select>
+            {/* Combo de token */}
+            <select
+              value={filtroActivo}
+              onChange={(e) => setFiltroActivo(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              <option value="">Todos los tokens</option>
+              {tokensRegistrados.map((token) => (
+                <option key={token} value={token}>{token}</option>
+              ))}
+            </select>
+            <input
+              type="date"
+              placeholder="Desde"
+              value={filtroFechaDesde}
+              onChange={(e) => setFiltroFechaDesde(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+            />
+            <input
+              type="date"
+              placeholder="Hasta"
+              value={filtroFechaHasta}
+              onChange={(e) => setFiltroFechaHasta(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setFiltroActivo('');
+                setFiltroUsuario('');
+                setFiltroFechaDesde('');
+                setFiltroFechaHasta('');
+              }}
+              className="px-4 py-2 rounded-lg bg-gray-300 text-gray-700 font-medium hover:bg-gray-400 transition"
+            >
+              Limpiar filtros
+            </button>
+          </div>
+
           {/* Lista de Transacciones */}
           <div className="md:col-span-3 bg-white p-6 shadow-xl rounded-xl">
             <h2 className="text-xl font-semibold text-gray-800 border-b pb-3 mb-4">
-              Historial de Transacciones ({transactions.length})
+              Historial de Transacciones ({transaccionesFiltradas.length})
             </h2>
             <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-              {transactions.length === 0 ? (
+              {transaccionesFiltradas.length === 0 ? (
                 <p className="text-gray-500 italic">
-                  Aún no hay transacciones. ¡Agrega la primera!
+                  No hay transacciones con los filtros seleccionados.
                 </p>
               ) : (
-                transactions.map((t) => (
+                transaccionesFiltradas.map((t) => (
                   <TransactionItem
                     key={t.id}
                     transaction={t}
@@ -410,68 +607,211 @@ service cloud.firestore {
             </div>
           )}
           <form onSubmit={handleAddTransaction} className="space-y-5">
-            {/* Tipo de Transacción */}
+            {/* Tipo de Operación */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tipo
+                Tipo de Operación
               </label>
               <div className="flex space-x-4">
                 <RadioOption
-                  id="investment"
-                  name="type"
-                  value="investment"
-                  checked={newTransaction.type === 'investment'}
+                  id="compra"
+                  name="tipoOperacion"
+                  value="compra"
+                  checked={newTransaction.tipoOperacion === 'compra'}
                   onChange={handleInputChange}
-                  label="Inversión"
+                  label="Compra"
                 />
                 <RadioOption
-                  id="withdrawal"
-                  name="type"
-                  value="withdrawal"
-                  checked={newTransaction.type === 'withdrawal'}
+                  id="venta"
+                  name="tipoOperacion"
+                  value="venta"
+                  checked={newTransaction.tipoOperacion === 'venta'}
                   onChange={handleInputChange}
-                  label="Retiro"
+                  label="Venta"
                 />
               </div>
             </div>
 
-            {/* Nombre/Descripción */}
+            {/* Activo */}
             <div>
               <label
-                htmlFor="name"
+                htmlFor="activo"
                 className="block text-sm font-medium text-gray-700"
               >
-                Nombre / Descripción
+                Activo
               </label>
               <input
-                id="name"
-                name="name"
+                id="activo"
+                name="activo"
                 type="text"
                 required
-                placeholder="Ej: Aporte inicial, Retiro de ganancia"
-                value={newTransaction.name}
+                placeholder="Ej: BTC, INTC"
+                value={newTransaction.activo}
                 onChange={handleInputChange}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
 
-            {/* Monto */}
+            {/* Nombre del Activo */}
             <div>
               <label
-                htmlFor="amount"
+                htmlFor="nombreActivo"
                 className="block text-sm font-medium text-gray-700"
               >
-                Monto (USD)
+                Nombre del Activo (opcional)
               </label>
               <input
-                id="amount"
-                name="amount"
+                id="nombreActivo"
+                name="nombreActivo"
+                type="text"
+                placeholder="Ej: Bitcoin, Intel"
+                value={newTransaction.nombreActivo}
+                onChange={handleInputChange}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            {/* Tipo de Activo */}
+            <div>
+              <label
+                htmlFor="tipoActivo"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Tipo de Activo (opcional)
+              </label>
+              <input
+                id="tipoActivo"
+                name="tipoActivo"
+                type="text"
+                placeholder="Ej: cripto, acción, cedear"
+                value={newTransaction.tipoActivo}
+                onChange={handleInputChange}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            {/* Cantidad */}
+            <div>
+              <label
+                htmlFor="cantidad"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Cantidad
+              </label>
+              <input
+                id="cantidad"
+                name="cantidad"
                 type="number"
                 required
-                step="0.01"
-                min="0.01"
-                placeholder="100.00"
-                value={newTransaction.amount}
+                step="any"
+                min="0.00000001"
+                placeholder="Ej: 0.5"
+                value={newTransaction.cantidad}
+                onChange={handleInputChange}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            {/* Precio Unitario */}
+            <div>
+              <label
+                htmlFor="precioUnitario"
+                className="block text-sm font-medium text-gray-700"
+              >
+                Precio Unitario
+              </label>
+              <input
+                id="precioUnitario"
+                name="precioUnitario"
+                type="number"
+                required
+                step="any"
+                min="0.0001"
+                placeholder="Ej: 100.00"
+                value={newTransaction.precioUnitario}
+                onChange={handleInputChange}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            {/* Moneda */}
+            <div>
+              <label htmlFor="moneda" className="block text-sm font-medium text-gray-700">
+                Moneda
+              </label>
+              <input
+                id="moneda"
+                name="moneda"
+                type="text"
+                required
+                placeholder="USD, ARS"
+                value={newTransaction.moneda}
+                onChange={handleInputChange}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            {/* Comisión */}
+            <div>
+              <label htmlFor="comision" className="block text-sm font-medium text-gray-700">
+                Comisión (opcional)
+              </label>
+              <input
+                id="comision"
+                name="comision"
+                type="number"
+                step="any"
+                min="0"
+                placeholder="Ej: 1.5"
+                value={newTransaction.comision}
+                onChange={handleInputChange}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            {/* Moneda Comisión */}
+            <div>
+              <label htmlFor="monedaComision" className="block text-sm font-medium text-gray-700">
+                Moneda Comisión (opcional)
+              </label>
+              <input
+                id="monedaComision"
+                name="monedaComision"
+                type="text"
+                placeholder="USD, ARS"
+                value={newTransaction.monedaComision}
+                onChange={handleInputChange}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            {/* Exchange */}
+            <div>
+              <label htmlFor="exchange" className="block text-sm font-medium text-gray-700">
+                Exchange (opcional)
+              </label>
+              <input
+                id="exchange"
+                name="exchange"
+                type="text"
+                placeholder="Ej: Binance, NYSE"
+                value={newTransaction.exchange}
+                onChange={handleInputChange}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+              />
+            </div>
+
+            {/* Notas */}
+            <div>
+              <label htmlFor="notas" className="block text-sm font-medium text-gray-700">
+                Notas (opcional)
+              </label>
+              <textarea
+                id="notas"
+                name="notas"
+                rows={2}
+                placeholder="Observaciones, detalles..."
+                value={newTransaction.notas}
                 onChange={handleInputChange}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
               />
@@ -573,42 +913,33 @@ const MetricCard = ({ title, amount, icon: Icon, color, formatCurrency }) => {
 
 // Item de transacción
 const TransactionItem = ({ transaction, formatCurrency, onDelete }) => {
-  const isInvestment = transaction.type === 'investment';
-  const typeClass = isInvestment
-    ? 'bg-green-100 text-green-700'
-    : 'bg-red-100 text-red-700';
-  const Icon = isInvestment ? ArrowUpRight : ArrowDownLeft;
-
-  const formattedDate =
-    transaction.timestamp instanceof Date
-      ? transaction.timestamp.toLocaleDateString('es-AR', {
-          year: 'numeric',
-          month: 'short',
-          day: 'numeric',
-        })
-      : 'Cargando fecha...';
+  const isCompra = transaction.tipoOperacion === 'compra';
+  const typeClass = isCompra ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700';
+  const Icon = isCompra ? ArrowUpRight : ArrowDownLeft;
+  const formattedDate = transaction.fecha instanceof Date
+    ? transaction.fecha.toLocaleDateString('es-AR', { year: 'numeric', month: 'short', day: 'numeric' })
+    : 'Cargando fecha...';
+  const userName = USER_NAMES[transaction.usuarioId] || 'Usuario';
+  const token = (transaction.activo || '').toUpperCase();
 
   return (
-    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md transition duration-150 ease-in-out">
+    <div className="flex flex-col md:flex-row md:items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md transition duration-150 ease-in-out">
       <div className="flex items-center space-x-3 min-w-0">
         <div className={`p-2 rounded-full ${typeClass}`}>
           <Icon className="w-5 h-5" />
         </div>
         <div className="min-w-0">
           <p className="font-semibold text-gray-800 truncate">
-            {transaction.name}
+            {transaction.nombreActivo || token}
           </p>
           <p className="text-xs text-gray-500">{formattedDate}</p>
+          <p className="text-xs text-indigo-700 font-bold">Token: {token}</p>
+          <p className="text-xs text-gray-700">Usuario: {userName}</p>
         </div>
       </div>
-
-      <div className="flex items-center space-x-3">
-        <p
-          className={`font-bold text-lg ${
-            isInvestment ? 'text-green-600' : 'text-red-600'
-          }`}
-        >
-          {formatCurrency(transaction.amount)}
+      <div className="flex items-center space-x-3 mt-2 md:mt-0">
+        <p className={`font-bold text-lg ${isCompra ? 'text-green-600' : 'text-red-600'}`}>
+          {formatCurrency(transaction.montoTotal || 0)}
         </p>
         <button
           onClick={() => onDelete(transaction.id)}
