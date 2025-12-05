@@ -1,21 +1,57 @@
-/node_modules
-/dist
-/build
+# Dependencias
+node_modules/
+
+# Builds / artefactos de compilación
+dist/
+build/
+.out/
+.next/
+.nuxt/
+.angular/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 *.log
+
+# Entornos / credenciales
 .env
 .env.local
 .env.*.local
 .git-credentials
+
+# (opcional pero recomendado)
+# mantené solo un archivo de ejemplo versionado
+!.env.example
+
+# Cachés de herramientas
+.cache/
+.vite/
+.parcel-cache/
+.turbo/
+.eslintcache
+.stylelintcache
+
+# Firebase
+.firebase/
+
+# SO / archivos basura
 .DS_Store
 Thumbs.db
 ehthumbs.db
+
+# Editores / IDEs
 .vscode/
-.idea
-.cache
-.vite/
-.firebase/
+.idea/
+*.iml
+
+# Otros (si usás estas plataformas)
+.vercel/
+.netlify/
+
