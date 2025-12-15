@@ -590,6 +590,7 @@ const App = () => {
                 <p className="mt-1 text-sm text-red-600">{fieldErrors.tipoActivo}</p>
               )}
             </div>
+            
             <div>
               <label htmlFor="cantidad" className="block text-sm font-medium text-gray-700">Cantidad</label>
               <input id="cantidad" name="cantidad" type="text" inputMode="decimal" required placeholder="Ej: 0.5" value={newTransaction.cantidad} onChange={handleInputChange} onPaste={(e) => {

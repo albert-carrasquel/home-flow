@@ -154,6 +154,14 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 
 ---
 
+**[2025-12-15] Reordenamiento: `moneda` entre `tipoActivo` y `cantidad` (implementado)**
+- Se movió el `select` de `moneda` para que aparezca inmediatamente después de `tipoActivo` y antes de `cantidad` en el formulario de inversiones.
+- Motivación: disminuir confusión visual al seleccionar la moneda asociada al activo antes de ingresar la cantidad y el precio.
+- Validación y sanitización: la lógica existente de validación inline y sanitización se mantiene sin cambios.
+- Tests/Validación: se verificó manualmente que el campo aparece en la nueva posición y que `npm run lint` no reporta errores.
+
+---
+
 **[2025-12-15] Bloqueo y sanitización de caracteres inválidos en inputs (implementado)**
 - Se implementaron sanitizadores en el frontend para evitar que el usuario pueda escribir o pegar caracteres inválidos en los campos:
   - `activo`: solo letras A–Z, siempre en mayúsculas, longitud máxima 10.
