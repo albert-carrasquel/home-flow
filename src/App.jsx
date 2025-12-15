@@ -548,7 +548,7 @@ const App = () => {
               )}
             </div>
             <div>
-              <label htmlFor="activo" className="block text-sm font-medium text-gray-700">Activo</label>
+              <label htmlFor="activo" className="block text-sm font-medium text-gray-700">Símbolo del Activo</label>
               <input id="activo" name="activo" type="text" required placeholder="Ej: BTC, INTC" value={newTransaction.activo} onChange={handleInputChange} onPaste={(e) => {
                 const text = (e.clipboardData || window.clipboardData).getData('text') || '';
                 const cleaned = sanitizeActivo(text);

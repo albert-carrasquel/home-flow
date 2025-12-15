@@ -26,4 +26,4 @@ export const sanitizeActivo = (value) =>
   String(value).replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 10);
 
 export const sanitizeNombre = (value) =>
-  String(value).replace(/[^A-Za-zÀ-ÖØ-öø-ÿ\s]/g, '').slice(0, 50);
+  String(value).replace(/[^A-Za-zÀ-ÖØ-öø-ÿ\s]/g, '').toUpperCase().slice(0, 50);

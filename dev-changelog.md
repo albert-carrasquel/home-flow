@@ -218,3 +218,10 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 **[2025-12-15] Fix: `monedaComision` guardada como null cuando está vacía**
 - Se ajustó `handleAddTransaction` en `src/App.jsx` para guardar `monedaComision` como `null` si el usuario no la selecciona, manteniendo consistencia con `comision`.
 - Motivación: evitar valores string vacíos en la base de datos y facilitar filtrado/consulta en reportes.
+
+---
+
+**[2025-12-15] UX: renombrar 'Activo' a 'Símbolo del Activo' y normalizar `nombreActivo` a mayúsculas**
+- Se cambió la etiqueta del campo `activo` a **"Símbolo del Activo"** para mayor claridad.
+- `nombreActivo` ahora se normaliza a mayúsculas durante la entrada (`sanitizeNombre` convierte el texto a `toUpperCase()`), de forma que lo que escribe el usuario se transforma en mayúsculas automáticamente.
+- Motivación: consistencia visual y simplificar búsquedas/filtrado al normalizar nombre y símbolo.
