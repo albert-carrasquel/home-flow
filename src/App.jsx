@@ -370,6 +370,8 @@ const App = () => {
       montoTotal: parseFloat(newTransaction.totalOperacion) || 0, // usamos el total indicado por el recibo
       // Guardar comisión como number o null si no existe (importante para cálculos y reportes)
       comision: newTransaction.comision ? parseFloat(newTransaction.comision) : null,
+      // Guardar moneda de la comisión como null si está vacía (consistencia con `comision`)
+      monedaComision: newTransaction.monedaComision ? newTransaction.monedaComision : null,
       usuarioId: userId,
       timestamp: serverTimestamp(), // fecha real de creación (para ordenar)
       fechaTransaccion: new Date(`${newTransaction.fechaTransaccion}T00:00:00`), // fecha elegida (como Date)

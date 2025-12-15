@@ -212,3 +212,9 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 **[2025-12-15] Fix: `comision` guardada como number (o null) en transacciones**
 - Se ajustó la lógica de guardado en `src/App.jsx` para que el campo `comision` se persista como `number` (usando `parseFloat`) cuando el usuario lo ingresa, o `null` si se deja vacío.
 - Motivación: facilitar cálculos y reportes posteriores (suma, media, comparativas) sin tener que castear strings a números en cada consulta.
+
+---
+
+**[2025-12-15] Fix: `monedaComision` guardada como null cuando está vacía**
+- Se ajustó `handleAddTransaction` en `src/App.jsx` para guardar `monedaComision` como `null` si el usuario no la selecciona, manteniendo consistencia con `comision`.
+- Motivación: evitar valores string vacíos en la base de datos y facilitar filtrado/consulta en reportes.
