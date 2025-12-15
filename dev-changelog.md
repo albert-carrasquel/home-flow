@@ -206,3 +206,9 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 - El repositorio en GitHub fue renombrado de `investment-manager-firebase` a `home-flow`.
 - Acciones realizadas localmente: actualizado `origin` a `git@github.com:albert-carrasquel/home-flow.git`, añadido campo `repository` en `package.json` y documentada la acción en este changelog.
 - Nota: Las configuraciones del proyecto en Firebase mantienen su `projectId` (`investment-manager-e47b6`) y no han sido modificadas para evitar romper integraciones.
+
+---
+
+**[2025-12-15] Fix: `comision` guardada como number (o null) en transacciones**
+- Se ajustó la lógica de guardado en `src/App.jsx` para que el campo `comision` se persista como `number` (usando `parseFloat`) cuando el usuario lo ingresa, o `null` si se deja vacío.
+- Motivación: facilitar cálculos y reportes posteriores (suma, media, comparativas) sin tener que castear strings a números en cada consulta.
