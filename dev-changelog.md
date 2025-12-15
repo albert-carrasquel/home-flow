@@ -199,3 +199,10 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 ---
 
 **Pendiente:** Definir estructura y campos para el modelo de usuario, incluyendo autenticación y permisos.
+
+---
+
+**[2025-12-15] Renombramiento del repositorio Git a `home-flow` (implementado)**
+- El repositorio en GitHub fue renombrado de `investment-manager-firebase` a `home-flow`.
+- Acciones realizadas localmente: actualizado `origin` a `git@github.com:albert-carrasquel/home-flow.git`, añadido campo `repository` en `package.json` y documentada la acción en este changelog.
+- Nota: Las configuraciones del proyecto en Firebase mantienen su `projectId` (`investment-manager-e47b6`) y no han sido modificadas para evitar romper integraciones.
