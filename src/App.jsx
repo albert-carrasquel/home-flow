@@ -267,12 +267,8 @@ const App = () => {
       return;
     }
 
-    if (userId) {
-      setIsSuperAdmin(SUPER_ADMINS.includes(userId));
-    } else {
-      setIsSuperAdmin(false);
-    }
-  }, [userId]);
+    setIsSuperAdmin(!!userId && SUPER_ADMINS.includes(userId));
+  }, [DEV_BYPASS_AUTH, userId]);
 
   // Cálculo de métricas
   const totalInvestment = transactions
@@ -416,13 +412,21 @@ const App = () => {
 
   // Mostrar nombre de usuario
   useEffect(() => {
+    if (DEV_BYPASS_AUTH) {
+      setUserName('Dev Mode');
+      return;
+    }
+
     if (userId && USER_NAMES[userId]) {
       setUserName(USER_NAMES[userId]);
-    } else if (auth && userId) {
-      const user = auth.currentUser;
-      setUserName(user.displayName || user.email || 'Usuario');
+      return;
     }
-  }, [auth, userId]);
+
+    if (auth && userId) {
+      const user = auth.currentUser;
+      setUserName(user?.displayName || user?.email || 'Usuario');
+    }
+  }, [DEV_BYPASS_AUTH, auth, userId]);
 
   // Obtener lista de tokens únicos normalizados
   const tokensRegistrados = Array.from(new Set(transactions.map(t => (t.activo || '').toUpperCase()).filter(Boolean)));
