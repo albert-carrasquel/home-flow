@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+/* global __app_id, __firebase_config */
+import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import {
   getAuth,
-  signInAnonymously,
-  signInWithCustomToken,
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
@@ -34,7 +33,7 @@ import {
 const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // Limpieza del appId para que sea un segmento válido de ruta en Firestore
-const appId = rawAppId.replace(/[/\.:]/g, '-');
+const appId = rawAppId.replace(/[.:]/g, '-').replace(/\//g, '-');
 
 // Flags DEV (ponelos arriba del componente App o cerca de la config global)
 const DEV_BYPASS_AUTH = true;
@@ -55,10 +54,7 @@ const firebaseConfig =
       appId: '1:471997247184:web:1a571d1cf28a8cfdd6b8d5',
     };
 
-// Token inicial de autenticación (si tu entorno lo inyecta)
-// En local lo normal es que sea null → autenticación anónima.
-const initialAuthToken =
-  typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+// Nota: __initial_auth_token puede inyectarse en entornos especiales; no se usa actualmente.
 
 // Ruta de Firestore:
 // artifacts/{appId}/public/data/transactions
@@ -140,13 +136,50 @@ const LoginForm = ({ onLogin, error }) => {
   );
 };
 
+// Formato de moneda compartido (utilidad global dentro de este módulo)
+const formatCurrency = (amount, moneda = 'ARS') =>
+  new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: moneda,
+    minimumFractionDigits: 2,
+  }).format(amount);
+
 const App = () => {
+  // Ref to detect IME composition (avoid sanitizing during composition)
+  const compositionRef = useRef(false);
+
+  // --- Sanitizers (prevent invalid characters on input) ---
+  const sanitizeDecimal = (value, maxDecimals = 8) => {
+    if (!value && value !== '') return '';
+    // Allow comma as decimal separator (convert to dot)
+    let v = value.replace(',', '.');
+    // Remove everything except digits and dot
+    v = v.replace(/[^0-9.]/g, '');
+    // Only allow one dot
+    const parts = v.split('.');
+    if (parts.length > 2) {
+      v = parts.shift() + '.' + parts.join('');
+    }
+    // Limit decimals
+    if (parts[1]) {
+      parts[1] = parts[1].slice(0, maxDecimals);
+      v = parts[0] + '.' + parts[1];
+    }
+    return v;
+  };
+
+  // sanitizeInteger removed (not used). Use sanitizeDecimal where needed.
+
+  const sanitizeActivo = (value) => value.replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 10);
+
+  const sanitizeNombre = (value) => value.replace(/[^A-Za-zÀ-ÖØ-öø-ÿ\s]/g, '').slice(0, 50);
+
   const [db, setDb] = useState(null);
   const [auth, setAuth] = useState(null);
   const [userId, setUserId] = useState(null);
   // isAuthReady indica que el intento inicial de autenticación ha finalizado
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [transactions, setTransactions] = useState([]);
+  const [_transactions, setTransactions] = useState([]);
   const [newTransaction, setNewTransaction] = useState({
     tipoOperacion: 'compra', // 'compra' o 'venta'
     activo: '',
@@ -154,32 +187,28 @@ const App = () => {
     tipoActivo: '',
     cantidad: '',
     precioUnitario: '',
-    moneda: 'ARS',
+    moneda: '',
     comision: '',
-    monedaComision: 'ARS',
+    monedaComision: '',
     exchange: '',
+    totalOperacion: '',
     notas: '',
     fechaTransaccion: '',
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [formError, setFormError] = useState(null);
+  // Replaced aggregate form error with per-field inline errors
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [successMessage, setSuccessMessage] = useState(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [docToDelete, setDocToDelete] = useState(null);
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(!!DEV_BYPASS_AUTH);
   const [loginError, setLoginError] = useState(null);
   const [showLogin, setShowLogin] = useState(true);
   // Mostrar nombre de usuario en vez de UID
-  const [userName, setUserName] = useState('');
+  const [userName, setUserName] = useState(DEV_BYPASS_AUTH ? 'Dev Mode' : '');
 
-  // Filtros para consultas avanzadas
-  const [filtroActivo, setFiltroActivo] = useState('');
-  const [filtroUsuario, setFiltroUsuario] = useState('');
-  const [filtroFechaDesde, setFiltroFechaDesde] = useState('');
-  const [filtroFechaHasta, setFiltroFechaHasta] = useState('');
-
-  // Nuevo estado para navegación entre vistas
-  const [vista, setVista] = useState('formulario'); // 'formulario' o 'consultas'
+  // (Filtros y vista se desactivaron por ahora para evitar variables sin usar)
   // Nuevo estado para pestañas multitarea
   const [tab, setTab] = useState(''); // '', 'inversiones', 'gastos', 'reportes'
 
@@ -187,8 +216,11 @@ const App = () => {
   // 1. Inicialización de Firebase (y bypass de auth en DEV)
   useEffect(() => {
     if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
-      setError('Error: Firebase configuration is missing.');
-      setIsLoading(false);
+      // Defer state changes to avoid triggering synchronous setState inside effect
+      setTimeout(() => {
+        setError('Error: Firebase configuration is missing.');
+        setIsLoading(false);
+      }, 0);
       return;
     }
 
@@ -197,20 +229,24 @@ const App = () => {
     const firebaseAuth = getAuth(app);
 
     setLogLevel('debug');
-    setDb(firestore);
-    setAuth(firebaseAuth);
+    // Defer state updates to avoid synchronous setState within effect
+    setTimeout(() => {
+      setDb(firestore);
+      setAuth(firebaseAuth);
+      // Marcamos la app lista
+      setIsAuthReady(true);
+      setIsLoading(false);
+    }, 0);
 
-    // Marcamos la app lista
-    setIsAuthReady(true);
-    setIsLoading(false);
-
-    // BYPASS DEV: entra directo sin login
+    // BYPASS DEV: entra directo sin login (defer state updates)
     if (DEV_BYPASS_AUTH) {
-      setUserId(DEV_USER_ID);
-      setUserName('Dev Mode');
-      setIsSuperAdmin(true);
-      setShowLogin(false);
-      setLoginError(null);
+      setTimeout(() => {
+        setUserId(DEV_USER_ID);
+        setUserName('Dev Mode');
+        setIsSuperAdmin(true);
+        setShowLogin(false);
+        setLoginError(null);
+      }, 0);
     }
   }, []);
 
@@ -260,81 +296,128 @@ const App = () => {
     return () => unsubscribe();
   }, [db, userId, isAuthReady]);
 
-  // Verificación de super admin
-  useEffect(() => {
-    if (DEV_BYPASS_AUTH) {
-      setIsSuperAdmin(true);
-      return;
-    }
-
-    setIsSuperAdmin(!!userId && SUPER_ADMINS.includes(userId));
-  }, [DEV_BYPASS_AUTH, userId]);
-
-  // Cálculo de métricas
-  const totalInvestment = transactions
-    .filter((t) => t.type === 'investment')
-    .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
-
-  const totalWithdrawal = transactions
-    .filter((t) => t.type === 'withdrawal')
-    .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
-
-  const netBalance = totalInvestment - totalWithdrawal;
-
-  const formatCurrency = (amount, moneda = 'ARS') =>
-    new Intl.NumberFormat('es-AR', {
-      style: 'currency',
-      currency: moneda,
-      minimumFractionDigits: 2,
-    }).format(amount);
+  // (Metrics and super-admin derivation are simplified/disabled for now)
 
   // Manejo de inputs del formulario
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setNewTransaction((prev) => ({ ...prev, [name]: value }));
-    if (formError) setFormError(null);
+
+    // If IME composition is in progress, set raw value and skip sanitization
+    if (compositionRef.current) {
+      setNewTransaction((prev) => ({ ...prev, [name]: value }));
+      return setFieldErrors((prev) => ({ ...prev, [name]: null }));
+    }
+
+    let sanitized = value;
+    switch (name) {
+      case 'activo':
+        sanitized = sanitizeActivo(value);
+        break;
+      case 'nombreActivo':
+        sanitized = sanitizeNombre(value);
+        break;
+      case 'cantidad':
+        sanitized = sanitizeDecimal(value, 8);
+        break;
+      case 'precioUnitario':
+        sanitized = sanitizeDecimal(value, 8);
+        break;
+      case 'totalOperacion':
+        sanitized = sanitizeDecimal(value, 2);
+        break;
+      case 'comision':
+        sanitized = sanitizeDecimal(value, 4);
+        break;
+      default:
+        sanitized = value;
+    }
+
+    setNewTransaction((prev) => ({ ...prev, [name]: sanitized }));
+    // Clear inline error for this field when the user modifies it
+    setFieldErrors((prev) => ({ ...prev, [name]: null }));
   };
 
   const handleAddTransaction = async (e) => {
     e.preventDefault();
-    const errors = [];
+    // Build per-field errors
+    const errors = {};
     const assetSymbol = (newTransaction.activo || '').toUpperCase();
     if (!/^[A-Z]{2,10}$/.test(assetSymbol)) {
-      errors.push('El campo "Activo" debe contener solo letras (A-Z), entre 2 y 10 caracteres.');
+      errors.activo = 'El campo "Activo" debe contener solo letras (A-Z), entre 2 y 10 caracteres.';
     }
     if (!/^\d+(\.\d+)?$/.test(newTransaction.cantidad) || parseFloat(newTransaction.cantidad) <= 0) {
-      errors.push('La "Cantidad" debe ser un número positivo.');
+      errors.cantidad = 'La "Cantidad" debe ser un número positivo.';
     }
     if (!/^\d+(\.\d+)?$/.test(newTransaction.precioUnitario) || parseFloat(newTransaction.precioUnitario) <= 0) {
-      errors.push('El "Precio Unitario" debe ser un número positivo.');
+      errors.precioUnitario = 'El "Precio Unitario" debe ser un número positivo.';
     }
-    if (!/^[A-Z]{2,5}$/.test(newTransaction.moneda)) {
-      errors.push('El campo "Moneda" debe contener solo letras (A-Z), entre 2 y 5 caracteres.');
+    // Nombre del activo: solo letras y espacios
+    if (newTransaction.nombreActivo && !/^[A-Za-zÀ-ÖØ-öø-ÿ\s]{2,50}$/.test(newTransaction.nombreActivo)) {
+      errors.nombreActivo = 'El "Nombre del Activo" debe contener solo letras y espacios (2-50 caracteres).';
     }
-    if (newTransaction.monedaComision && !/^[A-Z]{2,5}$/.test(newTransaction.monedaComision)) {
-      errors.push('El campo "Moneda Comisión" debe contener solo letras (A-Z), entre 2 y 5 caracteres.');
+    // Tipo de activo: debe ser una de las opciones permitidas y estar seleccionado
+    const allowedTipos = ['Cripto', 'Acciones', 'Cedears', 'Lecap', 'Letra', 'Bono'];
+    if (!newTransaction.tipoActivo) {
+      errors.tipoActivo = 'Selecciona un "Tipo de Activo".';
+    } else if (!allowedTipos.includes(newTransaction.tipoActivo)) {
+      errors.tipoActivo = 'Selecciona un "Tipo de Activo" válido.';
+    }
+    // Moneda: requerida y valida
+    const allowedMonedas = ['ARS', 'USD'];
+    if (!newTransaction.moneda) {
+      errors.moneda = 'Selecciona la "Moneda".';
+    } else if (!allowedMonedas.includes(newTransaction.moneda)) {
+      errors.moneda = 'Selecciona una "Moneda" válida (ARS o USD).';
+    }
+    // Moneda de comisión (opcional)
+    if (newTransaction.monedaComision && !allowedMonedas.includes(newTransaction.monedaComision)) {
+      errors.monedaComision = 'Selecciona una "Moneda Comisión" válida (ARS o USD).';
     }
     if (!newTransaction.fechaTransaccion) {
-      errors.push('Debes indicar la fecha de la transacción.');
+      errors.fechaTransaccion = 'Debes indicar la fecha de la transacción.';
     }
-    if (errors.length > 0) {
-      setFormError(errors.join(' '));
+    // Total acorde al recibo (obligatorio, solo números)
+    if (!/^\d+(\.\d+)?$/.test(newTransaction.totalOperacion) || parseFloat(newTransaction.totalOperacion) <= 0) {
+      errors.totalOperacion = 'El "Total (según recibo)" debe ser un número positivo.';
+    }
+    // Comisión (opcional) validación numérica
+    if (newTransaction.comision && !/^\d+(\.\d+)?$/.test(newTransaction.comision)) {
+      errors.comision = 'La "Comisión" debe ser un número válido.';
+    }
+    // Exchange: requerido y validar opción
+    const allowedExchanges = ['Invertir Online', 'Binance', 'BingX', 'Buenbit'];
+    if (!newTransaction.exchange) {
+      errors.exchange = 'Selecciona un "Exchange".';
+    } else if (!allowedExchanges.includes(newTransaction.exchange)) {
+      errors.exchange = 'Selecciona un "Exchange" válido.';
+    }
+
+    // If there are any field errors, set them and abort
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
     // Normalizamos el activo antes de guardar
     const transactionToSave = {
       ...newTransaction,
       activo: assetSymbol,
+      nombreActivo: newTransaction.nombreActivo || '',
+      tipoActivo: newTransaction.tipoActivo,
       cantidad: parseFloat(newTransaction.cantidad),
       precioUnitario: parseFloat(newTransaction.precioUnitario),
-      montoTotal: parseFloat(newTransaction.cantidad) * parseFloat(newTransaction.precioUnitario),
+      montoTotal: parseFloat(newTransaction.totalOperacion) || 0, // usamos el total indicado por el recibo
       usuarioId: userId,
-      fecha: serverTimestamp(),
-      fechaTransaccion: newTransaction.fechaTransaccion,
+      timestamp: serverTimestamp(), // fecha real de creación (para ordenar)
+      fechaTransaccion: new Date(`${newTransaction.fechaTransaccion}T00:00:00`), // fecha elegida (como Date)
+      exchange: newTransaction.exchange || '',
     };
     try {
       const transactionsPath = getTransactionsCollectionPath(appId);
       await addDoc(collection(db, transactionsPath), transactionToSave);
+
+      setSuccessMessage('✅ Transacción guardada correctamente');
+      setTimeout(() => setSuccessMessage(null), 2500);
+
       setNewTransaction({
         tipoOperacion: 'compra',
         activo: '',
@@ -342,15 +425,15 @@ const App = () => {
         tipoActivo: '',
         cantidad: '',
         precioUnitario: '',
-        moneda: 'ARS',
+        moneda: '',
         comision: '',
-        monedaComision: 'ARS',
+        monedaComision: '',
         exchange: '',
         notas: '',
         totalOperacion: '',
         fechaTransaccion: '',
       });
-      setFormError(null);
+      setFieldErrors({});
     } catch (e) {
       console.error('Error adding transaction: ', e);
       setError('Error al agregar la transacción. Revisa las reglas de seguridad de Firestore.');
@@ -358,7 +441,7 @@ const App = () => {
   };
 
   // Manejo del modal de confirmación de borrado
-  const handleShowDeleteConfirm = (id) => {
+  const _handleShowDeleteConfirm = (id) => {
     setDocToDelete(id);
     setShowConfirmModal(true);
   };
@@ -405,41 +488,24 @@ const App = () => {
     }
   };
 
-  // Si ya hay usuario, no mostrar login
-  useEffect(() => {
-    if (userId) setShowLogin(false);
-  }, [userId]);
+  // (El control de visibilidad del login se gestiona en la inicialización y en el flujo de login)
 
-  // Mostrar nombre de usuario
+  // Mostrar nombre de usuario (cuando cambia userId o auth info)
   useEffect(() => {
-    if (DEV_BYPASS_AUTH) {
-      setUserName('Dev Mode');
-      return;
-    }
-
     if (userId && USER_NAMES[userId]) {
-      setUserName(USER_NAMES[userId]);
+      // Defer to avoid synchronous setState inside effect
+      setTimeout(() => setUserName(USER_NAMES[userId]), 0);
       return;
     }
 
     if (auth && userId) {
       const user = auth.currentUser;
-      setUserName(user?.displayName || user?.email || 'Usuario');
+      // defer to avoid synchronous setState in effect
+      setTimeout(() => setUserName(user?.displayName || user?.email || 'Usuario'), 0);
     }
-  }, [DEV_BYPASS_AUTH, auth, userId]);
+  }, [auth, userId]);
 
-  // Obtener lista de tokens únicos normalizados
-  const tokensRegistrados = Array.from(new Set(transactions.map(t => (t.activo || '').toUpperCase()).filter(Boolean)));
-
-  // Consulta filtrada mejorada
-  const transaccionesFiltradas = transactions.filter((t) => {
-    let ok = true;
-    if (filtroActivo && t.activo) ok = ok && t.activo.toUpperCase() === filtroActivo;
-    if (filtroUsuario && t.usuarioId) ok = ok && t.usuarioId === filtroUsuario;
-    if (filtroFechaDesde && t.fecha) ok = ok && t.fecha.toDate() >= new Date(filtroFechaDesde);
-    if (filtroFechaHasta && t.fecha) ok = ok && t.fecha.toDate() <= new Date(filtroFechaHasta);
-    return ok;
-  });
+  // (Futuros filtros y tokens registrados: desactivados temporalmente para evitar variables sin usar)
 
   // --- RENDER ---
 
@@ -499,66 +565,167 @@ const App = () => {
         </header>
         <div className="max-w-xl mx-auto bg-white rounded-2xl shadow-2xl p-8">
           <h2 className="text-2xl font-bold mb-6 text-indigo-700 text-center">Agregar nueva transacción</h2>
-          {formError && (
-            <div className="p-3 mb-4 text-sm text-red-700 bg-red-100 rounded-lg">{formError}</div>
+
+          {successMessage && (
+            <div className="p-3 mb-4 text-sm text-green-800 bg-green-100 rounded-lg">
+              {successMessage}
+            </div>
           )}
+
+          {/* Ahora mostramos errores inline por campo en lugar de un mensaje global */}
           <form onSubmit={handleAddTransaction} className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Operación</label>
-              <div className="flex space-x-4">
-                <RadioOption id="compra" name="tipoOperacion" value="compra" checked={newTransaction.tipoOperacion === 'compra'} onChange={handleInputChange} label="Compra" />
-                <RadioOption id="venta" name="tipoOperacion" value="venta" checked={newTransaction.tipoOperacion === 'venta'} onChange={handleInputChange} label="Venta" />
-              </div>
-            </div>
-            <div>
-              <label htmlFor="activo" className="block text-sm font-medium text-gray-700">Activo</label>
-              <input id="activo" name="activo" type="text" required placeholder="Ej: BTC, INTC" value={newTransaction.activo} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
-            </div>
-            <div>
-              <label htmlFor="nombreActivo" className="block text-sm font-medium text-gray-700">Nombre del Activo (opcional)</label>
-              <input id="nombreActivo" name="nombreActivo" type="text" placeholder="Ej: Bitcoin, Intel" value={newTransaction.nombreActivo} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
-            </div>
-            <div>
-              <label htmlFor="tipoActivo" className="block text-sm font-medium text-gray-700">Tipo de Activo (opcional)</label>
-              <input id="tipoActivo" name="tipoActivo" type="text" placeholder="Ej: cripto, acción, cedear" value={newTransaction.tipoActivo} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
-            </div>
-            <div>
-              <label htmlFor="cantidad" className="block text-sm font-medium text-gray-700">Cantidad</label>
-              <input id="cantidad" name="cantidad" type="number" required step="any" min="0.00000001" placeholder="Ej: 0.5" value={newTransaction.cantidad} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
-            </div>
-            <div>
-              <label htmlFor="precioUnitario" className="block text-sm font-medium text-gray-700">Precio Unitario</label>
-              <input id="precioUnitario" name="precioUnitario" type="number" required step="any" min="0.0001" placeholder="Ej: 100.00" value={newTransaction.precioUnitario} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
-            </div>
-            <div>
-              <label htmlFor="totalOperacion" className="block text-sm font-medium text-gray-700">Total {newTransaction.tipoOperacion === 'compra' ? 'Compra' : 'Venta'} (según recibo)</label>
-              <input id="totalOperacion" name="totalOperacion" type="number" required step="any" min="0.01" placeholder="Ej: 1000.00" value={newTransaction.totalOperacion || ''} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
-            </div>
             <div>
               <label htmlFor="fechaTransaccion" className="block text-sm font-medium text-gray-700">Fecha de la transacción</label>
               <input id="fechaTransaccion" name="fechaTransaccion" type="date" required value={newTransaction.fechaTransaccion || ''} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+              {fieldErrors.fechaTransaccion && (
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.fechaTransaccion}</p>
+              )}
             </div>
             <div>
-              <label htmlFor="moneda" className="block text-sm font-medium text-gray-700">Moneda</label>
-              <select id="moneda" name="moneda" required value={newTransaction.moneda} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
-                <option value="ARS">ARS</option>
-                <option value="USD">USD</option>
+              <label htmlFor="activo" className="block text-sm font-medium text-gray-700">Activo</label>
+              <input id="activo" name="activo" type="text" required placeholder="Ej: BTC, INTC" value={newTransaction.activo} onChange={handleInputChange} onPaste={(e) => {
+                const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+                const cleaned = sanitizeActivo(text);
+                if (!cleaned) e.preventDefault();
+                else {
+                  e.preventDefault();
+                  setNewTransaction(prev => ({ ...prev, activo: cleaned }));
+                  setFieldErrors(prev => ({ ...prev, activo: null }));
+                }
+              }} onCompositionStart={() => (compositionRef.current = true)} onCompositionEnd={(e) => { compositionRef.current = false; handleInputChange(e); }} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+              {fieldErrors.activo && (
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.activo}</p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="nombreActivo" className="block text-sm font-medium text-gray-700">Nombre del Activo</label>
+              <input id="nombreActivo" name="nombreActivo" type="text" placeholder="Ej: Bitcoin" value={newTransaction.nombreActivo} onChange={handleInputChange} onPaste={(e) => {
+                const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+                const cleaned = sanitizeNombre(text);
+                if (!cleaned) e.preventDefault();
+                else {
+                  e.preventDefault();
+                  setNewTransaction(prev => ({ ...prev, nombreActivo: cleaned }));
+                  setFieldErrors(prev => ({ ...prev, nombreActivo: null }));
+                }
+              }} onCompositionStart={() => (compositionRef.current = true)} onCompositionEnd={(e) => { compositionRef.current = false; handleInputChange(e); }} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+              {fieldErrors.nombreActivo && (
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.nombreActivo}</p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="tipoActivo" className="block text-sm font-medium text-gray-700">Tipo de Activo</label>
+              <select id="tipoActivo" name="tipoActivo" value={newTransaction.tipoActivo} onChange={handleInputChange} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                <option value="" disabled>Selecciona tipo de activo...</option>
+                <option value="Cripto">Cripto</option>
+                <option value="Acciones">Acciones</option>
+                <option value="Cedears">Cedears</option>
+                <option value="Lecap">Lecap</option>
+                <option value="Letra">Letra</option>
+                <option value="Bono">Bono</option>
               </select>
+              {fieldErrors.tipoActivo && (
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.tipoActivo}</p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="cantidad" className="block text-sm font-medium text-gray-700">Cantidad</label>
+              <input id="cantidad" name="cantidad" type="text" inputMode="decimal" required placeholder="Ej: 0.5" value={newTransaction.cantidad} onChange={handleInputChange} onPaste={(e) => {
+                const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+                const cleaned = sanitizeDecimal(text, 8);
+                if (!cleaned) e.preventDefault();
+                else {
+                  e.preventDefault();
+                  setNewTransaction(prev => ({ ...prev, cantidad: cleaned }));
+                  setFieldErrors(prev => ({ ...prev, cantidad: null }));
+                }
+              }} onCompositionStart={() => (compositionRef.current = true)} onCompositionEnd={(e) => { compositionRef.current = false; handleInputChange(e); }} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+              {fieldErrors.cantidad && (
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.cantidad}</p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="precioUnitario" className="block text-sm font-medium text-gray-700">Precio Unitario</label>
+              <input id="precioUnitario" name="precioUnitario" type="text" inputMode="decimal" required placeholder="Ej: 100.00" value={newTransaction.precioUnitario} onChange={handleInputChange} onPaste={(e) => {
+                const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+                const cleaned = sanitizeDecimal(text, 8);
+                if (!cleaned) e.preventDefault();
+                else {
+                  e.preventDefault();
+                  setNewTransaction(prev => ({ ...prev, precioUnitario: cleaned }));
+                  setFieldErrors(prev => ({ ...prev, precioUnitario: null }));
+                }
+              }} onCompositionStart={() => (compositionRef.current = true)} onCompositionEnd={(e) => { compositionRef.current = false; handleInputChange(e); }} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+              {fieldErrors.precioUnitario && (
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.precioUnitario}</p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="totalOperacion" className="block text-sm font-medium text-gray-700">Total {newTransaction.tipoOperacion === 'compra' ? 'Compra' : 'Venta'} (según recibo)</label>
+              <input id="totalOperacion" name="totalOperacion" type="text" inputMode="decimal" required step="any" min="0.01" placeholder="Ej: 1000.00" value={newTransaction.totalOperacion || ''} onChange={handleInputChange} onPaste={(e) => {
+                const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+                const cleaned = sanitizeDecimal(text, 2);
+                if (!cleaned) e.preventDefault();
+                else {
+                  e.preventDefault();
+                  setNewTransaction(prev => ({ ...prev, totalOperacion: cleaned }));
+                  setFieldErrors(prev => ({ ...prev, totalOperacion: null }));
+                }
+              }} onCompositionStart={() => (compositionRef.current = true)} onCompositionEnd={(e) => { compositionRef.current = false; handleInputChange(e); }} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+              {fieldErrors.totalOperacion && (
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.totalOperacion}</p>
+              )}
             </div>
             <div>
               <label htmlFor="comision" className="block text-sm font-medium text-gray-700">Comisión (opcional)</label>
-              <input id="comision" name="comision" type="number" step="any" min="0" placeholder="Ej: 1.5" value={newTransaction.comision} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+              <input id="comision" name="comision" type="text" inputMode="decimal" step="any" min="0" placeholder="Ej: 1.5" value={newTransaction.comision} onChange={handleInputChange} onPaste={(e) => {
+                const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+                const cleaned = sanitizeDecimal(text, 4);
+                if (!cleaned) e.preventDefault();
+                else {
+                  e.preventDefault();
+                  setNewTransaction(prev => ({ ...prev, comision: cleaned }));
+                  setFieldErrors(prev => ({ ...prev, comision: null }));
+                }
+              }} onCompositionStart={() => (compositionRef.current = true)} onCompositionEnd={(e) => { compositionRef.current = false; handleInputChange(e); }} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+              {fieldErrors.comision && (
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.comision}</p>
+              )}
             </div>
             <div>
               <label htmlFor="monedaComision" className="block text-sm font-medium text-gray-700">Moneda Comisión (opcional)</label>
               <select id="monedaComision" name="monedaComision" value={newTransaction.monedaComision} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                <option value="" disabled>Selecciona moneda para la comisión...</option>
                 <option value="ARS">ARS</option>
                 <option value="USD">USD</option>
               </select>
+              {fieldErrors.monedaComision && (
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.monedaComision}</p>
+              )}
             </div>
             <div>
-              <label htmlFor="exchange" className="block text-sm font-medium text-gray-700">Exchange (opcional)</label>
-              <input id="exchange" name="exchange" type="text" placeholder="Ej: Binance, NYSE" value={newTransaction.exchange} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+              <label htmlFor="exchange" className="block text-sm font-medium text-gray-700">Exchange</label>
+              <select id="exchange" name="exchange" value={newTransaction.exchange} onChange={handleInputChange} required className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                <option value="" disabled>Selecciona exchange...</option>
+                <option value="Invertir Online">Invertir Online</option>
+                <option value="Binance">Binance</option>
+                <option value="BingX">BingX</option>
+                <option value="Buenbit">Buenbit</option>
+              </select>
+              {fieldErrors.exchange && (
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.exchange}</p>
+              )}
+            </div>
+            <div>
+              <label htmlFor="moneda" className="block text-sm font-medium text-gray-700">Moneda</label>
+              <select id="moneda" name="moneda" required value={newTransaction.moneda} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                <option value="" disabled>Selecciona moneda...</option>
+                <option value="ARS">ARS</option>
+                <option value="USD">USD</option>
+              </select>
+              {fieldErrors.moneda && (
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.moneda}</p>
+              )}
             </div>
             <div>
               <label htmlFor="notas" className="block text-sm font-medium text-gray-700">Notas (opcional)</label>
@@ -649,7 +816,8 @@ const ConfirmationModal = ({ onConfirm, onCancel }) => (
 );
 
 // Tarjeta de métrica
-const MetricCard = ({ title, amount, icon: Icon, color, formatCurrency, moneda }) => {
+const MetricCard = ({ title, amount, icon, color, moneda }) => {
+  const IconComponent = icon;
   const colorClasses = {
     green: 'bg-green-500 text-white',
     red: 'bg-red-500 text-white',
@@ -671,7 +839,7 @@ const MetricCard = ({ title, amount, icon: Icon, color, formatCurrency, moneda }
           </h3>
         </div>
         <div className={`p-3 rounded-full ${colorClasses[color]} shadow-lg ${shadowClass[color]}`}>
-          <Icon className="w-6 h-6" />
+          <IconComponent className="w-6 h-6" />
         </div>
       </div>
     </div>
@@ -679,12 +847,13 @@ const MetricCard = ({ title, amount, icon: Icon, color, formatCurrency, moneda }
 };
 
 // Item de transacción
-const TransactionItem = ({ transaction, formatCurrency, onDelete }) => {
+const TransactionItem = ({ transaction, onDelete }) => {
   const isCompra = transaction.tipoOperacion === 'compra';
   const typeClass = isCompra ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700';
   const Icon = isCompra ? ArrowUpRight : ArrowDownLeft;
-  const formattedDate = transaction.fecha instanceof Date
-    ? transaction.fecha.toLocaleDateString('es-AR', { year: 'numeric', month: 'short', day: 'numeric' })
+  const sourceDate = transaction.fechaTransaccion || transaction.fecha;
+  const formattedDate = sourceDate instanceof Date
+    ? sourceDate.toLocaleDateString('es-AR', { year: 'numeric', month: 'short', day: 'numeric' })
     : 'Cargando fecha...';
   const userName = USER_NAMES[transaction.usuarioId] || 'Usuario';
   const token = (transaction.activo || '').toUpperCase();

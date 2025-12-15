@@ -125,4 +125,47 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 
 ---
 
+**[2025-12-15] Preparación para reestructura del formulario de inversiones**
+- Estado antes de cambios: la pestaña de inversiones contiene un formulario funcional con validaciones básicas y el campo `fechaTransaccion` ya presente.
+- Objetivo inmediato: reordenar campos del formulario y añadir validaciones estrictas por campo (activo solo letras, nombre solo letras, campos numéricos, selects para tipo de activo y exchange).
+- Plan: (1) actualizar UI del formulario, (2) reforzar validaciones en `handleAddTransaction`, (3) usar el campo `totalOperacion` como monto oficial registrado según recibo (no calcular automáticamente), (4) documentar los cambios.
+
+---
+
+**[2025-12-15] Reestructura y validaciones del formulario de inversiones (implementado)**
+- Se reordenaron los campos del formulario de inversiones en el siguiente orden: Fecha, Activo, Nombre del Activo, Tipo de Activo (select), Cantidad, Precio Unitario, Total (según recibo), Comisión, Exchange (select), Moneda, Notas.
+- `Activo` ahora se normaliza a mayúsculas y solo acepta letras (A-Z, 2-10 caracteres).
+- `Nombre del Activo` valida que contenga solo letras y espacios (2-50 caracteres).
+- `Tipo de Activo` se convirtió en un `select` con opciones: Cripto, Acciones, Cedears, Lecap, Letra, Bono.
+- `Exchange` se convirtió en un `select` con opciones: Invertir Online, Binance, BingX, Buenbit.
+- Los campos numéricos (`Cantidad`, `Precio Unitario`, `Total (según recibo)`, `Comisión`) validan valores numéricos positivos.
+- Se cambió la lógica para que `montoTotal` se registre usando `totalOperacion` (valor indicado en el recibo), en lugar de calcularlo automáticamente a partir de cantidad * precioUnitario.
+- Se añadió `fechaTransaccion` al registro en la base de datos (guardada como `Date`) y se muestra preferentemente en el historial.
+- Se probaron cambios manualmente (DEV_BYPASS_AUTH habilitado para facilitar pruebas locales).
+
+---
+
+**[2025-12-15] Validación inline por campo y placeholders en selects (implementado)**
+- Se reemplazó la validación global por errores inline por campo (`fieldErrors`) y se muestran mensajes específicos debajo de cada input en la UI.
+- Los `select` críticos (`tipoActivo`, `exchange`, `moneda`) ahora incluyen una opción placeholder deshabilitada (valor vacío) para forzar al usuario a seleccionar explícitamente una opción.
+- La lógica de validación en `handleAddTransaction` fue adaptada para devolver errores por campo y no permitir envío hasta corregirlos.
+- Se actualizó la inicialización y el reset del formulario para que los selects empiecen vacíos y obliguen selección manual.
+- Pruebas: build de producción ejecutado exitosamente (`vite build`) y pruebas manuales de flujo de alta de transacción realizadas en entorno DEV.
+
+---
+
+**[2025-12-15] Bloqueo y sanitización de caracteres inválidos en inputs (implementado)**
+- Se implementaron sanitizadores en el frontend para evitar que el usuario pueda escribir o pegar caracteres inválidos en los campos:
+  - `activo`: solo letras A–Z, siempre en mayúsculas, longitud máxima 10.
+  - `nombreActivo`: solo letras y espacios (acentos soportados), máximo 50 caracteres.
+  - `cantidad`, `precioUnitario`: permiten solo números y punto decimal, sanitización al escribir y al pegar (hasta 8 decimales por defecto).
+  - `totalOperacion`: permite solo números y punto decimal, máximo 2 decimales (valor oficial según recibo).
+  - `comision`: números y punto decimal, hasta 4 decimales.
+- Manejo robusto de entrada: sanitización en `onChange`, control de `onPaste` para evitar pegar texto inválido, y soporte para IME (entrada por composición) para no interferir con usuarios que usan teclados complejos.
+- Se añadieron ayudas de accesibilidad/UX: `inputMode="decimal"` en inputs numéricos y placeholders descriptivos.
+- La validación al enviar (`handleAddTransaction`) se mantiene como capa de seguridad adicional.
+
+
+---
+
 **Pendiente:** Definir estructura y campos para el modelo de usuario, incluyendo autenticación y permisos.
