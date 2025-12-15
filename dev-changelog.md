@@ -108,4 +108,21 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 - Se mantiene la opción de cambiar la moneda en cada operación.
 ---
 
+**[2025-12-05] Rediseño de la portada y estructura multitarea**
+- Se rediseñó la portada de la app: ahora al iniciar sesión solo se muestra la selección de sección (Inversiones, Gastos, Reportes).
+- Eliminadas las métricas y el historial de transacciones de la portada y de la sección de inversiones.
+- Se agregó estructura multitarea con pestañas para futuras funciones.
+- Se preparó el esqueleto para gastos mensuales y reportes.
+- Listo para escalar y agregar nuevas funcionalidades.
+
+---
+
+**[2025-12-05] Rediseño de la pestaña de inversiones y mejora del formulario**
+- Rediseño de la pestaña de inversiones: header con imagen profesional y diseño moderno.
+- Formulario responsive con bordes redondeados, validaciones avanzadas y campo para fecha de la transacción.
+- El campo fecha de la transacción se guarda en la base de datos y se valida en el formulario.
+- Listo para registrar compras y ventas de activos con toda la información relevante.
+
+---
+
 **Pendiente:** Definir estructura y campos para el modelo de usuario, incluyendo autenticación y permisos.

@@ -36,6 +36,10 @@ const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 // Limpieza del appId para que sea un segmento válido de ruta en Firestore
 const appId = rawAppId.replace(/[/\.:]/g, '-');
 
+// Flags DEV (ponelos arriba del componente App o cerca de la config global)
+const DEV_BYPASS_AUTH = true;
+const DEV_USER_ID = 'dev-albert';
+
 // Configuración de Firebase:
 // - Si __firebase_config existe (entorno "especial" tipo Canvas / Gemini), lo usamos.
 // - Si no existe (como en tu local o Firebase Hosting), usamos la config "normal" del proyecto.
@@ -43,13 +47,13 @@ const firebaseConfig =
   typeof __firebase_config !== 'undefined' && __firebase_config
     ? JSON.parse(__firebase_config)
     : {
-        apiKey: 'AIzaSyDqQN-Lf4xZInlqysBaFIwNG2uCGQ1Vde4',
-        authDomain: 'investment-manager-e47b6.firebaseapp.com',
-        projectId: 'investment-manager-e47b6',
-        storageBucket: 'investment-manager-e47b6.firebasestorage.app',
-        messagingSenderId: '471997247184',
-        appId: '1:471997247184:web:1a571d1cf28a8cfdd6b8d5',
-      };
+      apiKey: 'AIzaSyDqQN-Lf4xZInlqysBaFIwNG2uCGQ1Vde4',
+      authDomain: 'investment-manager-e47b6.firebaseapp.com',
+      projectId: 'investment-manager-e47b6',
+      storageBucket: 'investment-manager-e47b6.firebasestorage.app',
+      messagingSenderId: '471997247184',
+      appId: '1:471997247184:web:1a571d1cf28a8cfdd6b8d5',
+    };
 
 // Token inicial de autenticación (si tu entorno lo inyecta)
 // En local lo normal es que sea null → autenticación anónima.
@@ -155,6 +159,7 @@ const App = () => {
     monedaComision: 'ARS',
     exchange: '',
     notas: '',
+    fechaTransaccion: '',
   });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -173,24 +178,42 @@ const App = () => {
   const [filtroFechaDesde, setFiltroFechaDesde] = useState('');
   const [filtroFechaHasta, setFiltroFechaHasta] = useState('');
 
-  // 1. Inicialización de Firebase y Autenticación
+  // Nuevo estado para navegación entre vistas
+  const [vista, setVista] = useState('formulario'); // 'formulario' o 'consultas'
+  // Nuevo estado para pestañas multitarea
+  const [tab, setTab] = useState(''); // '', 'inversiones', 'gastos', 'reportes'
+
+
+  // 1. Inicialización de Firebase (y bypass de auth en DEV)
   useEffect(() => {
-    if (Object.keys(firebaseConfig).length === 0) {
+    if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
       setError('Error: Firebase configuration is missing.');
       setIsLoading(false);
       return;
     }
 
-    // Inicialización de la app y servicios
     const app = initializeApp(firebaseConfig);
     const firestore = getFirestore(app);
     const firebaseAuth = getAuth(app);
+
     setLogLevel('debug');
     setDb(firestore);
     setAuth(firebaseAuth);
+
+    // Marcamos la app lista
     setIsAuthReady(true);
     setIsLoading(false);
+
+    // BYPASS DEV: entra directo sin login
+    if (DEV_BYPASS_AUTH) {
+      setUserId(DEV_USER_ID);
+      setUserName('Dev Mode');
+      setIsSuperAdmin(true);
+      setShowLogin(false);
+      setLoginError(null);
+    }
   }, []);
+
 
   // 2. Suscripción en tiempo real a las transacciones
   useEffect(() => {
@@ -239,6 +262,11 @@ const App = () => {
 
   // Verificación de super admin
   useEffect(() => {
+    if (DEV_BYPASS_AUTH) {
+      setIsSuperAdmin(true);
+      return;
+    }
+
     if (userId) {
       setIsSuperAdmin(SUPER_ADMINS.includes(userId));
     } else {
@@ -273,28 +301,25 @@ const App = () => {
 
   const handleAddTransaction = async (e) => {
     e.preventDefault();
-    // Validaciones avanzadas
     const errors = [];
-    // Validación de activo (assetSymbol)
     const assetSymbol = (newTransaction.activo || '').toUpperCase();
     if (!/^[A-Z]{2,10}$/.test(assetSymbol)) {
       errors.push('El campo "Activo" debe contener solo letras (A-Z), entre 2 y 10 caracteres.');
     }
-    // Validación de cantidad (amount)
     if (!/^\d+(\.\d+)?$/.test(newTransaction.cantidad) || parseFloat(newTransaction.cantidad) <= 0) {
       errors.push('La "Cantidad" debe ser un número positivo.');
     }
-    // Validación de precioUnitario
     if (!/^\d+(\.\d+)?$/.test(newTransaction.precioUnitario) || parseFloat(newTransaction.precioUnitario) <= 0) {
       errors.push('El "Precio Unitario" debe ser un número positivo.');
     }
-    // Validación de moneda
     if (!/^[A-Z]{2,5}$/.test(newTransaction.moneda)) {
       errors.push('El campo "Moneda" debe contener solo letras (A-Z), entre 2 y 5 caracteres.');
     }
-    // Validación de monedaComision (si se completó)
     if (newTransaction.monedaComision && !/^[A-Z]{2,5}$/.test(newTransaction.monedaComision)) {
       errors.push('El campo "Moneda Comisión" debe contener solo letras (A-Z), entre 2 y 5 caracteres.');
+    }
+    if (!newTransaction.fechaTransaccion) {
+      errors.push('Debes indicar la fecha de la transacción.');
     }
     if (errors.length > 0) {
       setFormError(errors.join(' '));
@@ -309,6 +334,7 @@ const App = () => {
       montoTotal: parseFloat(newTransaction.cantidad) * parseFloat(newTransaction.precioUnitario),
       usuarioId: userId,
       fecha: serverTimestamp(),
+      fechaTransaccion: newTransaction.fechaTransaccion,
     };
     try {
       const transactionsPath = getTransactionsCollectionPath(appId);
@@ -325,6 +351,8 @@ const App = () => {
         monedaComision: 'ARS',
         exchange: '',
         notas: '',
+        totalOperacion: '',
+        fechaTransaccion: '',
       });
       setFormError(null);
     } catch (e) {
@@ -409,448 +437,165 @@ const App = () => {
     return ok;
   });
 
-  // Mostrar login si no está autenticado
-  if (showLogin && isAuthReady && !userId) {
-    return <LoginForm onLogin={handleLogin} error={loginError} />;
-  }
-
   // --- RENDER ---
 
+  let contenido = null;
+
   if (isLoading) {
-    return (
+    contenido = (
       <div className="flex justify-center items-center h-screen bg-gray-50">
         <div className="text-xl font-medium text-gray-700">
           Cargando aplicación...
         </div>
       </div>
     );
-  }
-
-  if (error) {
-    return (
+  } else if (error) {
+    contenido = (
       <div className="p-8 bg-red-100 border border-red-400 text-red-700 rounded-lg max-w-lg mx-auto mt-10 shadow-xl">
-        <h2 className="text-2xl font-bold mb-4">
-          Error de Configuración/Conexión
-        </h2>
-
+        <h2 className="text-2xl font-bold mb-4">Error de Configuración/Conexión</h2>
         <p className="font-semibold mb-2">{error}</p>
-
-        <p className="mt-4 text-sm font-bold text-red-800">
-          ACCIÓN REQUERIDA: El error `permission-denied` indica que las Reglas
-          de Seguridad de tu base de datos Firestore están bloqueando el acceso.
-          Para una aplicación colaborativa pública como esta, debes permitir la
-          lectura y escritura.
-        </p>
-
-        <h3 className="mt-4 text-lg font-semibold text-red-700">
-          Regla de Seguridad Sugerida (para copiar):
-        </h3>
-
-        <div className="mt-3 p-4 bg-red-2 00 rounded-lg text-xs break-all overflow-x-auto font-mono">
-          <pre className="whitespace-pre-wrap">
-{`rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // Permite lectura y escritura en la colección de transacciones (ruta pública)
-    // RUTA: /artifacts/{appId}/public/data/transactions/{transactionId}
-    match /artifacts/{appId}/public/data/transactions/{transactionId} {
-      allow read, write: if true;
-    }
-    // Asegúrate de que tengas una regla de fallback para el resto de la base de datos
-    // match /{document=**} {
-    //   allow read, write: if false; // O cualquier otra regla de seguridad por defecto
-    // }
-  }
-}`}
-          </pre>
-        </div>
-
-        <p className="mt-4 text-xs text-red-800 italic">
-          Copia y pega este *snippet* en el editor de "Reglas" de tu consola de
-          Firebase para solucionar el problema de permisos.
-        </p>
-
-        <div className="mt-4 p-2 bg-red-300 rounded text-xs break-all">
-          <strong>Ruta de Firestore utilizada:</strong> {' '}
-          {getTransactionsCollectionPath(appId)}
-          <br />
-          <strong>User ID:</strong> {userId || 'No autenticado'}
-          <br />
-          <span className="italic">
-            Revisa la consola para el logging de depuración de Firestore.
-          </span>
-        </div>
       </div>
     );
-  }
-
-  if (!isSuperAdmin && isAuthReady) {
-    return (
+  } else if (!DEV_BYPASS_AUTH && !isSuperAdmin && isAuthReady) {
+    contenido = (
       <div className="flex flex-col justify-center items-center h-screen bg-gray-50">
         <div className="p-8 bg-red-100 border border-red-400 text-red-700 rounded-lg max-w-lg mx-auto mt-10 shadow-xl">
           <h2 className="text-2xl font-bold mb-4">Acceso Denegado</h2>
-          <p className="mb-2">
-            Tu usuario no tiene permisos para acceder a esta aplicación.
-          </p>
-          <p className="text-xs text-gray-600">
-            Contacta al administrador para solicitar acceso.
-          </p>
-          <div className="mt-4 p-2 bg-red-300 rounded text-xs break-all">
-            <strong>User ID detectado:</strong> {userId || 'No autenticado'}
-          </div>
         </div>
+      </div>
+    );
+  } else if (!tab) {
+    contenido = (
+      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center font-sans antialiased">
+        <header className="mb-8 p-4 bg-white shadow-lg rounded-xl text-center">
+          <h1 className="text-3xl font-extrabold text-indigo-700 flex items-center justify-center">
+            <DollarSign className="w-8 h-8 mr-2 text-indigo-500" />
+            Investment Manager
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">Bienvenido, {userName}</p>
+        </header>
+        <div className="w-full max-w-md bg-white rounded-xl shadow-xl p-8 flex flex-col gap-6">
+          <h2 className="text-xl font-bold text-indigo-700 text-center mb-4">¿Qué sección deseas consultar?</h2>
+          <button className="w-full py-3 rounded-lg bg-indigo-600 text-white font-bold text-lg hover:bg-indigo-700 transition" onClick={() => setTab('inversiones')}>Inversiones</button>
+          <button className="w-full py-3 rounded-lg bg-green-600 text-white font-bold text-lg hover:bg-green-700 transition" onClick={() => setTab('gastos')}>Gastos Mensuales</button>
+          <button className="w-full py-3 rounded-lg bg-gray-600 text-white font-bold text-lg hover:bg-gray-700 transition" onClick={() => setTab('reportes')}>Reportes</button>
+        </div>
+      </div>
+    );
+  } else if (tab === 'inversiones') {
+    contenido = (
+      <div className="min-h-screen bg-gray-100 p-4 sm:p-8 font-sans antialiased">
+        <header className="mb-8 p-4 bg-white shadow-lg rounded-xl flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <DollarSign className="w-10 h-10 text-indigo-600" />
+            <h1 className="text-3xl font-extrabold text-indigo-700">Inversiones</h1>
+          </div>
+          <img src="https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=400&q=80" alt="Inversiones" className="rounded-xl shadow-lg w-32 h-32 object-cover hidden md:block" />
+          <button className="px-4 py-2 rounded-lg bg-gray-200 text-indigo-700 font-bold hover:bg-gray-300" onClick={() => setTab('')}>Volver</button>
+        </header>
+        <div className="max-w-xl mx-auto bg-white rounded-2xl shadow-2xl p-8">
+          <h2 className="text-2xl font-bold mb-6 text-indigo-700 text-center">Agregar nueva transacción</h2>
+          {formError && (
+            <div className="p-3 mb-4 text-sm text-red-700 bg-red-100 rounded-lg">{formError}</div>
+          )}
+          <form onSubmit={handleAddTransaction} className="space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Tipo de Operación</label>
+              <div className="flex space-x-4">
+                <RadioOption id="compra" name="tipoOperacion" value="compra" checked={newTransaction.tipoOperacion === 'compra'} onChange={handleInputChange} label="Compra" />
+                <RadioOption id="venta" name="tipoOperacion" value="venta" checked={newTransaction.tipoOperacion === 'venta'} onChange={handleInputChange} label="Venta" />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="activo" className="block text-sm font-medium text-gray-700">Activo</label>
+              <input id="activo" name="activo" type="text" required placeholder="Ej: BTC, INTC" value={newTransaction.activo} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+            </div>
+            <div>
+              <label htmlFor="nombreActivo" className="block text-sm font-medium text-gray-700">Nombre del Activo (opcional)</label>
+              <input id="nombreActivo" name="nombreActivo" type="text" placeholder="Ej: Bitcoin, Intel" value={newTransaction.nombreActivo} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+            </div>
+            <div>
+              <label htmlFor="tipoActivo" className="block text-sm font-medium text-gray-700">Tipo de Activo (opcional)</label>
+              <input id="tipoActivo" name="tipoActivo" type="text" placeholder="Ej: cripto, acción, cedear" value={newTransaction.tipoActivo} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+            </div>
+            <div>
+              <label htmlFor="cantidad" className="block text-sm font-medium text-gray-700">Cantidad</label>
+              <input id="cantidad" name="cantidad" type="number" required step="any" min="0.00000001" placeholder="Ej: 0.5" value={newTransaction.cantidad} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+            </div>
+            <div>
+              <label htmlFor="precioUnitario" className="block text-sm font-medium text-gray-700">Precio Unitario</label>
+              <input id="precioUnitario" name="precioUnitario" type="number" required step="any" min="0.0001" placeholder="Ej: 100.00" value={newTransaction.precioUnitario} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+            </div>
+            <div>
+              <label htmlFor="totalOperacion" className="block text-sm font-medium text-gray-700">Total {newTransaction.tipoOperacion === 'compra' ? 'Compra' : 'Venta'} (según recibo)</label>
+              <input id="totalOperacion" name="totalOperacion" type="number" required step="any" min="0.01" placeholder="Ej: 1000.00" value={newTransaction.totalOperacion || ''} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+            </div>
+            <div>
+              <label htmlFor="fechaTransaccion" className="block text-sm font-medium text-gray-700">Fecha de la transacción</label>
+              <input id="fechaTransaccion" name="fechaTransaccion" type="date" required value={newTransaction.fechaTransaccion || ''} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+            </div>
+            <div>
+              <label htmlFor="moneda" className="block text-sm font-medium text-gray-700">Moneda</label>
+              <select id="moneda" name="moneda" required value={newTransaction.moneda} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                <option value="ARS">ARS</option>
+                <option value="USD">USD</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="comision" className="block text-sm font-medium text-gray-700">Comisión (opcional)</label>
+              <input id="comision" name="comision" type="number" step="any" min="0" placeholder="Ej: 1.5" value={newTransaction.comision} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+            </div>
+            <div>
+              <label htmlFor="monedaComision" className="block text-sm font-medium text-gray-700">Moneda Comisión (opcional)</label>
+              <select id="monedaComision" name="monedaComision" value={newTransaction.monedaComision} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                <option value="ARS">ARS</option>
+                <option value="USD">USD</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="exchange" className="block text-sm font-medium text-gray-700">Exchange (opcional)</label>
+              <input id="exchange" name="exchange" type="text" placeholder="Ej: Binance, NYSE" value={newTransaction.exchange} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+            </div>
+            <div>
+              <label htmlFor="notas" className="block text-sm font-medium text-gray-700">Notas (opcional)</label>
+              <textarea id="notas" name="notas" rows={2} placeholder="Observaciones, detalles..." value={newTransaction.notas} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
+            </div>
+            <button type="submit" className="w-full flex justify-center py-2 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">Agregar Transacción</button>
+          </form>
+        </div>
+      </div>
+    );
+  } else if (tab === 'gastos') {
+    contenido = (
+      <div className="min-h-screen bg-gray-100 p-4 sm:p-8 font-sans antialiased">
+        <header className="mb-8 p-4 bg-white shadow-lg rounded-xl flex justify-between items-center">
+          <h1 className="text-2xl font-extrabold text-green-700 flex items-center">Gastos Mensuales</h1>
+          <button className="px-4 py-2 rounded-lg bg-gray-200 text-green-700 font-bold hover:bg-gray-300" onClick={() => setTab('')}>Volver</button>
+        </header>
+        <div className="bg-white rounded-xl shadow-xl p-8 text-center text-gray-500">Próximamente: Control de gastos mensuales</div>
+      </div>
+    );
+  } else if (tab === 'reportes') {
+    contenido = (
+      <div className="min-h-screen bg-gray-100 p-4 sm:p-8 font-sans antialiased">
+        <header className="mb-8 p-4 bg-white shadow-lg rounded-xl flex justify-between items-center">
+          <h1 className="text-2xl font-extrabold text-gray-700 flex items-center">Reportes</h1>
+          <button className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 font-bold hover:bg-gray-300" onClick={() => setTab('')}>Volver</button>
+        </header>
+        <div className="bg-white rounded-xl shadow-xl p-8 text-center text-gray-500">Próximamente: Panel de reportes</div>
       </div>
     );
   }
 
+  // Mostrar login si no está autenticado
+  if (!DEV_BYPASS_AUTH && showLogin && isAuthReady && !userId) {
+    return <LoginForm onLogin={handleLogin} error={loginError} />;
+  }
+
+  // Render único
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-8 font-sans antialiased">
-      <header className="mb-8 p-4 bg-white shadow-lg rounded-xl">
-        <h1 className="text-3xl font-extrabold text-indigo-700 flex items-center">
-          <DollarSign className="w-8 h-8 mr-2 text-indigo-500" />
-          Investment Manager
-        </h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Proyecto colaborativo usando React y Cloud Firestore.
-        </p>
-        {userName && (
-          <div className="mt-3 text-xs text-gray-600 p-2 bg-indigo-50 rounded-lg break-all">
-            <strong>Usuario:</strong> {userName}
-          </div>
-        )}
-      </header>
-
-      <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Panel de Métricas */}
-        <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <MetricCard
-            title="Balance Neto"
-            amount={netBalance}
-            icon={DollarSign}
-            color={netBalance >= 0 ? 'green' : 'red'}
-            formatCurrency={formatCurrency}
-          />
-          <MetricCard
-            title="Inversión Total"
-            amount={totalInvestment}
-            icon={ArrowUpRight}
-            color="indigo"
-            formatCurrency={formatCurrency}
-          />
-          <MetricCard
-            title="Retiro Total"
-            amount={totalWithdrawal}
-            icon={ArrowDownLeft}
-            color="red"
-            formatCurrency={formatCurrency}
-          />
-
-          {/* Filtros de consulta mejorados */}
-          <div className="mb-6 p-4 bg-indigo-50 rounded-xl flex flex-col md:flex-row gap-4 items-center">
-            {/* Combo de usuario */}
-            <select
-              value={filtroUsuario}
-              onChange={(e) => setFiltroUsuario(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-            >
-              <option value="">Todos los usuarios</option>
-              <option value="9dZMQNvgovSWE4lP7tOUNDzy6Md2">Albert Carrasquel</option>
-              <option value="T0Kh0eHZ05he8iqD6vEG2G2c7Rl2">Haydee Macias</option>
-            </select>
-            {/* Combo de token */}
-            <select
-              value={filtroActivo}
-              onChange={(e) => setFiltroActivo(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-            >
-              <option value="">Todos los tokens</option>
-              {tokensRegistrados.map((token) => (
-                <option key={token} value={token}>{token}</option>
-              ))}
-            </select>
-            <input
-              type="date"
-              placeholder="Desde"
-              value={filtroFechaDesde}
-              onChange={(e) => setFiltroFechaDesde(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-            />
-            <input
-              type="date"
-              placeholder="Hasta"
-              value={filtroFechaHasta}
-              onChange={(e) => setFiltroFechaHasta(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setFiltroActivo('');
-                setFiltroUsuario('');
-                setFiltroFechaDesde('');
-                setFiltroFechaHasta('');
-              }}
-              className="px-4 py-2 rounded-lg bg-gray-300 text-gray-700 font-medium hover:bg-gray-400 transition"
-            >
-              Limpiar filtros
-            </button>
-          </div>
-
-          {/* Lista de Transacciones */}
-          <div className="md:col-span-3 bg-white p-6 shadow-xl rounded-xl">
-            <h2 className="text-xl font-semibold text-gray-800 border-b pb-3 mb-4">
-              Historial de Transacciones ({transaccionesFiltradas.length})
-            </h2>
-            <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
-              {transaccionesFiltradas.length === 0 ? (
-                <p className="text-gray-500 italic">
-                  No hay transacciones con los filtros seleccionados.
-                </p>
-              ) : (
-                transaccionesFiltradas.map((t) => (
-                  <TransactionItem
-                    key={t.id}
-                    transaction={t}
-                    formatCurrency={formatCurrency}
-                    onDelete={handleShowDeleteConfirm}
-                  />
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Formulario de Nueva Transacción */}
-        <div className="lg:col-span-1 bg-white p-6 shadow-xl rounded-xl h-fit">
-          <h2 className="text-2xl font-bold mb-6 text-indigo-700">
-            Nueva Transacción
-          </h2>
-          {formError && (
-            <div className="p-3 mb-4 text-sm text-red-700 bg-red-100 rounded-lg">
-              {formError}
-            </div>
-          )}
-          <form onSubmit={handleAddTransaction} className="space-y-5">
-            {/* Tipo de Operación */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Tipo de Operación
-              </label>
-              <div className="flex space-x-4">
-                <RadioOption
-                  id="compra"
-                  name="tipoOperacion"
-                  value="compra"
-                  checked={newTransaction.tipoOperacion === 'compra'}
-                  onChange={handleInputChange}
-                  label="Compra"
-                />
-                <RadioOption
-                  id="venta"
-                  name="tipoOperacion"
-                  value="venta"
-                  checked={newTransaction.tipoOperacion === 'venta'}
-                  onChange={handleInputChange}
-                  label="Venta"
-                />
-              </div>
-            </div>
-
-            {/* Activo */}
-            <div>
-              <label
-                htmlFor="activo"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Activo
-              </label>
-              <input
-                id="activo"
-                name="activo"
-                type="text"
-                required
-                placeholder="Ej: BTC, INTC"
-                value={newTransaction.activo}
-                onChange={handleInputChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Nombre del Activo */}
-            <div>
-              <label
-                htmlFor="nombreActivo"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Nombre del Activo (opcional)
-              </label>
-              <input
-                id="nombreActivo"
-                name="nombreActivo"
-                type="text"
-                placeholder="Ej: Bitcoin, Intel"
-                value={newTransaction.nombreActivo}
-                onChange={handleInputChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Tipo de Activo */}
-            <div>
-              <label
-                htmlFor="tipoActivo"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Tipo de Activo (opcional)
-              </label>
-              <input
-                id="tipoActivo"
-                name="tipoActivo"
-                type="text"
-                placeholder="Ej: cripto, acción, cedear"
-                value={newTransaction.tipoActivo}
-                onChange={handleInputChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Cantidad */}
-            <div>
-              <label
-                htmlFor="cantidad"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Cantidad
-              </label>
-              <input
-                id="cantidad"
-                name="cantidad"
-                type="number"
-                required
-                step="any"
-                min="0.00000001"
-                placeholder="Ej: 0.5"
-                value={newTransaction.cantidad}
-                onChange={handleInputChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Precio Unitario */}
-            <div>
-              <label
-                htmlFor="precioUnitario"
-                className="block text-sm font-medium text-gray-700"
-              >
-                Precio Unitario
-              </label>
-              <input
-                id="precioUnitario"
-                name="precioUnitario"
-                type="number"
-                required
-                step="any"
-                min="0.0001"
-                placeholder="Ej: 100.00"
-                value={newTransaction.precioUnitario}
-                onChange={handleInputChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Moneda */}
-            <div>
-              <label htmlFor="moneda" className="block text-sm font-medium text-gray-700">
-                Moneda
-              </label>
-              <input
-                id="moneda"
-                name="moneda"
-                type="text"
-                required
-                placeholder="USD, ARS"
-                value={newTransaction.moneda}
-                onChange={handleInputChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Comisión */}
-            <div>
-              <label htmlFor="comision" className="block text-sm font-medium text-gray-700">
-                Comisión (opcional)
-              </label>
-              <input
-                id="comision"
-                name="comision"
-                type="number"
-                step="any"
-                min="0"
-                placeholder="Ej: 1.5"
-                value={newTransaction.comision}
-                onChange={handleInputChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Moneda Comisión */}
-            <div>
-              <label htmlFor="monedaComision" className="block text-sm font-medium text-gray-700">
-                Moneda Comisión (opcional)
-              </label>
-              <input
-                id="monedaComision"
-                name="monedaComision"
-                type="text"
-                placeholder="USD, ARS"
-                value={newTransaction.monedaComision}
-                onChange={handleInputChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Exchange */}
-            <div>
-              <label htmlFor="exchange" className="block text-sm font-medium text-gray-700">
-                Exchange (opcional)
-              </label>
-              <input
-                id="exchange"
-                name="exchange"
-                type="text"
-                placeholder="Ej: Binance, NYSE"
-                value={newTransaction.exchange}
-                onChange={handleInputChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Notas */}
-            <div>
-              <label htmlFor="notas" className="block text-sm font-medium text-gray-700">
-                Notas (opcional)
-              </label>
-              <textarea
-                id="notas"
-                name="notas"
-                rows={2}
-                placeholder="Observaciones, detalles..."
-                value={newTransaction.notas}
-                onChange={handleInputChange}
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out"
-            >
-              Agregar Transacción
-            </button>
-          </form>
-        </div>
-      </main>
-
+    <>
+      {contenido}
       {/* Modal de Confirmación */}
       {showConfirmModal && (
         <ConfirmationModal
@@ -858,7 +603,7 @@ service cloud.firestore {
           onCancel={handleCancelDelete}
         />
       )}
-    </div>
+    </>
   );
 };
 
