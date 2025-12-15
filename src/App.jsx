@@ -590,7 +590,17 @@ const App = () => {
                 <p className="mt-1 text-sm text-red-600">{fieldErrors.tipoActivo}</p>
               )}
             </div>
-            
+            <div>
+              <label htmlFor="moneda" className="block text-sm font-medium text-gray-700">Moneda</label>
+              <select id="moneda" name="moneda" required value={newTransaction.moneda} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
+                <option value="" disabled>Selecciona moneda...</option>
+                <option value="ARS">ARS</option>
+                <option value="USD">USD</option>
+              </select>
+              {fieldErrors.moneda && (
+                <p className="mt-1 text-sm text-red-600">{fieldErrors.moneda}</p>
+              )}
+            </div>
             <div>
               <label htmlFor="cantidad" className="block text-sm font-medium text-gray-700">Cantidad</label>
               <input id="cantidad" name="cantidad" type="text" inputMode="decimal" required placeholder="Ej: 0.5" value={newTransaction.cantidad} onChange={handleInputChange} onPaste={(e) => {
@@ -679,17 +689,7 @@ const App = () => {
                 <p className="mt-1 text-sm text-red-600">{fieldErrors.exchange}</p>
               )}
             </div>
-            <div>
-              <label htmlFor="moneda" className="block text-sm font-medium text-gray-700">Moneda</label>
-              <select id="moneda" name="moneda" required value={newTransaction.moneda} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500">
-                <option value="" disabled>Selecciona moneda...</option>
-                <option value="ARS">ARS</option>
-                <option value="USD">USD</option>
-              </select>
-              {fieldErrors.moneda && (
-                <p className="mt-1 text-sm text-red-600">{fieldErrors.moneda}</p>
-              )}
-            </div>
+            
             <div>
               <label htmlFor="notas" className="block text-sm font-medium text-gray-700">Notas (opcional)</label>
               <textarea id="notas" name="notas" rows={2} placeholder="Observaciones, detalles..." value={newTransaction.notas} onChange={handleInputChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500" />
