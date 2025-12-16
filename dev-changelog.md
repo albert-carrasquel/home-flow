@@ -582,3 +582,48 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
   - Módulo `cashflow` (gastos/ingresos) no se tocó.
   - Manejo de fechas (`createdAt`/`occurredAt`) no se modificó.
 
+---
+
+**[2025-12-16] Integración de logo y favicon personalizados**
+- **Objetivo**: reemplazar los íconos genéricos (DollarSign de lucide-react y favicon de Vite) con identidad visual personalizada para HomeFlow.
+
+- **Assets añadidos**:
+  - `src/assets/logo.png`: Logo personalizado de HomeFlow.
+  - `public/favicon.ico`: Favicon personalizado para pestaña del navegador.
+
+- **Implementación**:
+  1. **Logo en aplicación** (`src/App.jsx`):
+     - Importado como `import logo from './assets/logo.png';`
+     - Reemplazado ícono `DollarSign` de lucide-react en 4 ubicaciones:
+       - **Welcome screen**: 48x48px con `filter: drop-shadow(0 0 20px rgba(255, 176, 136, 0.4))`
+       - **Header Inversiones**: 40x40px con `filter: drop-shadow(0 0 12px rgba(255, 176, 136, 0.3))`
+       - **Header Gastos**: 40x40px con `filter: drop-shadow(0 0 12px rgba(255, 176, 136, 0.3))`
+       - **Header Reportes**: 40x40px con `filter: drop-shadow(0 0 12px rgba(255, 176, 136, 0.3))`
+     - Drop-shadow naranja consistente con tema visual (naranja suave/peach).
+  
+  2. **Favicon** (`index.html`):
+     - Actualizado `<link rel="icon">` de `/vite.svg` a `/favicon.ico`
+     - Cambiado `type="image/svg+xml"` a `type="image/x-icon"` para compatibilidad
+
+- **Resultado visual**:
+  - Logo personalizado visible en toda la aplicación (welcome + 3 headers principales)
+  - Favicon personalizado en pestaña del navegador
+  - Identidad visual coherente y profesional
+  - Drop-shadow naranja consistente con tema fintech
+
+- **Testing**:
+  - Build de producción exitoso: `npm run build` (4.45s, sin errores)
+  - Logo renderizado correctamente en 4 pantallas
+  - Favicon visible en pestaña del navegador
+  - Sin warnings ni errores en consola
+
+- **Archivos modificados**:
+  - `src/App.jsx`: Import de logo y reemplazo de 4 íconos DollarSign por `<img src={logo}>`
+  - `index.html`: Actualización de referencia favicon
+
+- **Archivos añadidos**:
+  - `src/assets/logo.png`
+  - `public/favicon.ico`
+
+---
+

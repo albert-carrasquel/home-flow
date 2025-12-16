@@ -882,7 +882,7 @@ const App = () => {
       <div className="hf-welcome">
         <div className="hf-card hf-welcome-card hf-text-center">
           <h1 className="hf-text-gradient">
-            <DollarSign className="w-12 h-12 inline-block mr-2" style={{filter: 'drop-shadow(0 0 20px rgba(68, 241, 224, 0.4))'}} />
+            <img src={logo} alt="HomeFlow Logo" className="inline-block mr-2" style={{width: '48px', height: '48px', filter: 'drop-shadow(0 0 20px rgba(255, 176, 136, 0.4))'}} />
             HomeFlow
           </h1>
           <p className="hf-welcome p">Bienvenido, {userName}</p>
@@ -913,7 +913,7 @@ const App = () => {
       <div className="hf-page">
         <div className="hf-header">
           <div className="hf-flex hf-gap-md" style={{alignItems: 'center'}}>
-            <DollarSign className="w-10 h-10" style={{color: 'var(--hf-accent-cyan)'}} />
+            <img src={logo} alt="HomeFlow Logo" style={{width: '40px', height: '40px', filter: 'drop-shadow(0 0 12px rgba(255, 176, 136, 0.3))'}} />
             <h2>Inversiones</h2>
           </div>
           <button className="hf-button hf-button-ghost" onClick={() => setTab('')}>Volver</button>
@@ -1173,7 +1173,10 @@ const App = () => {
     contenido = (
       <div className="hf-page">
         <div className="hf-header">
-          <h2>Gastos / Ingresos</h2>
+          <div className="hf-flex hf-gap-md" style={{alignItems: 'center'}}>
+            <img src={logo} alt="HomeFlow Logo" style={{width: '40px', height: '40px', filter: 'drop-shadow(0 0 12px rgba(255, 176, 136, 0.3))'}} />
+            <h2>Gastos / Ingresos</h2>
+          </div>
           <button className="hf-button hf-button-ghost" onClick={() => setTab('')}>Volver</button>
         </div>
         <div className="hf-card" style={{maxWidth: '900px', margin: '0 auto'}}>
@@ -1267,7 +1270,7 @@ const App = () => {
                     <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center', marginBottom: '0.5rem'}}>
                       <span className={`hf-badge ${c.tipo === 'gasto' ? 'hf-badge-error' : 'hf-badge-success'}`}>{c.tipo.toUpperCase()}</span>
                       <span className="text-sm" style={{color: 'var(--hf-text-secondary)'}}>{c.categoria}</span>
-                      <span className="text-sm font-medium" style={{color: 'var(--hf-accent-cyan)'}}>{USER_NAMES[c.usuarioId] ? USER_NAMES[c.usuarioId].split(' ')[0] : 'Usuario'}</span>
+                      <span className="text-sm font-medium" style={{color: 'var(--hf-accent-primary)'}}>{USER_NAMES[c.usuarioId] ? USER_NAMES[c.usuarioId].split(' ')[0] : 'Usuario'}</span>
                     </div>
                     <div className="font-bold text-lg">{formatCurrency(c.monto || 0, c.moneda || 'ARS')}</div>
                     <div className="text-sm" style={{color: 'var(--hf-text-muted)'}}>{(c.fechaOperacion && c.fechaOperacion.toDate) ? c.fechaOperacion.toDate().toLocaleDateString() : (c.fechaOperacion ? new Date(c.fechaOperacion).toLocaleDateString() : '')}</div>
@@ -1298,7 +1301,10 @@ const App = () => {
     contenido = (
       <div className="hf-page">
         <div className="hf-header">
-          <h2>Reportes</h2>
+          <div className="hf-flex hf-gap-md" style={{alignItems: 'center'}}>
+            <img src={logo} alt="HomeFlow Logo" style={{width: '40px', height: '40px', filter: 'drop-shadow(0 0 12px rgba(255, 176, 136, 0.3))'}} />
+            <h2>Reportes</h2>
+          </div>
           <button className="hf-button hf-button-ghost" onClick={() => setTab('')}>Volver</button>
         </div>
 
@@ -1350,7 +1356,7 @@ const App = () => {
             {/* Conditional filters for inversiones */}
             {reportFilters.tipoDatos === 'inversiones' && (
               <div style={{borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: 'var(--hf-space-lg)', marginTop: 'var(--hf-space-md)'}}>
-                <h3 className="text-md font-semibold mb-3" style={{color: 'var(--hf-accent-cyan)'}}>Filtros de Inversiones</h3>
+                <h3 className="text-md font-semibold mb-3" style={{color: 'var(--hf-accent-primary)'}}>Filtros de Inversiones</h3>
                 <div className="hf-grid-4">
                   <div className="hf-field">
                     <label>Operación</label>
@@ -1384,7 +1390,7 @@ const App = () => {
             {/* Conditional filters for cashflow */}
             {reportFilters.tipoDatos === 'cashflow' && (
               <div style={{borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: 'var(--hf-space-lg)', marginTop: 'var(--hf-space-md)'}}>
-                <h3 className="text-md font-semibold mb-3" style={{color: 'var(--hf-accent-cyan)'}}>Filtros de Cashflow</h3>
+                <h3 className="text-md font-semibold mb-3" style={{color: 'var(--hf-accent-primary)'}}>Filtros de Cashflow</h3>
                 <div className="hf-grid-4">
                   <div className="hf-field">
                     <label>Tipo</label>
@@ -1541,7 +1547,7 @@ const App = () => {
                             <td style={{color: 'var(--hf-text-secondary)'}}>{r.descripcion || '-'}</td>
                           </>
                         )}
-                        <td style={{color: 'var(--hf-accent-cyan)', fontWeight: 500}}>{USER_NAMES[r.usuarioId]?.split(' ')[0] || 'Usuario'}</td>
+                        <td style={{color: 'var(--hf-accent-primary)', fontWeight: 500}}>{USER_NAMES[r.usuarioId]?.split(' ')[0] || 'Usuario'}</td>
                         {reportFilters.incluirAnulados && (
                           <td>{r.anulada ? <span className="hf-badge hf-badge-warning">ANULADA</span> : <span className="hf-badge hf-badge-success">Activa</span>}</td>
                         )}
