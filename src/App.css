@@ -115,21 +115,19 @@
 /* Feature cards for home screen */
 .hf-features-grid {
   display: flex;
-  flex-direction: row;
-  justify-content: center;
+  flex-direction: column;        /* ← SIEMPRE columna vertical */
   align-items: center;
   gap: 1rem;
-  flex-wrap: wrap;
   margin-top: var(--hf-space-2xl);
-  max-width: 1000px;
+  max-width: 500px;              /* ← Ancho contenido para botones verticales */
   margin-left: auto;
   margin-right: auto;
+  width: 100%;
 }
 
 .hf-features-grid .hf-button {
-  min-width: 220px;
-  max-width: 280px;
-  width: auto;
+  width: 100%;                   /* ← Botones ocupan ancho completo */
+  max-width: 400px;              /* ← Límite razonable */
   padding: 1rem 1.5rem;
   font-size: 1.125rem;
   display: flex;
@@ -153,19 +151,6 @@
 
 .hf-feature-icon {
   font-size: 1.5rem;
-}
-
-/* Mobile: botones apilados verticalmente */
-@media (max-width: 899px) {
-  .hf-features-grid {
-    flex-direction: column;
-    max-width: 500px;
-  }
-  
-  .hf-features-grid .hf-button {
-    width: 100%;
-    max-width: none;
-  }
 }
 
 /* Section headers with icons */
