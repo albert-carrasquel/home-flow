@@ -485,15 +485,30 @@ const App = () => {
       return;
     }
     // Normalizamos el activo antes de guardar
+    const cantidad = parseFloat(newTransaction.cantidad);
+    const precioUnitario = parseFloat(newTransaction.precioUnitario);
+    const totalOperacion = parseFloat(newTransaction.totalOperacion);
+    
+    // Calculate montoTotal (theoretical: cantidad * precioUnitario)
+    const montoTotal = cantidad * precioUnitario;
+    
+    // Calculate diferenciaOperacion (totalOperacion - montoTotal)
+    const diferenciaOperacion = totalOperacion - montoTotal;
+    
     const transactionToSave = {
       ...newTransaction,
       tipoOperacion: newTransaction.tipoOperacion,
       activo: assetSymbol,
       nombreActivo: newTransaction.nombreActivo || '',
       tipoActivo: newTransaction.tipoActivo,
-      cantidad: parseFloat(newTransaction.cantidad),
-      precioUnitario: parseFloat(newTransaction.precioUnitario),
-      montoTotal: parseFloat(newTransaction.totalOperacion) || 0, // usamos el total indicado por el recibo
+      cantidad,
+      precioUnitario,
+      // NEW STANDARD: totalOperacion as source of truth (official receipt amount)
+      totalOperacion,
+      // NEW STANDARD: montoTotal as calculated theoretical amount
+      montoTotal,
+      // NEW STANDARD: diferenciaOperacion shows implicit fees/spreads/rounding
+      diferenciaOperacion,
       // Guardar comisión como number o null si no existe (importante para cálculos y reportes)
       comision: newTransaction.comision ? parseFloat(newTransaction.comision) : null,
       // Guardar moneda de la comisión como null si está vacía (consistencia con `comision`)
@@ -936,26 +951,54 @@ const App = () => {
             </div>
             <div>
               <label htmlFor="activo" className="block text-sm font-medium text-gray-700">Símbolo del Activo</label>
-              <select
-                id="activo"
-                name="activo"
-                value={newTransaction.activo}
-                onChange={handleInputChange}
-                required
-                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
-                disabled={newTransaction.tipoOperacion === 'venta' && activosList.length === 0}
-              >
-                {activosList.length === 0 ? (
-                  <option value="" disabled>No hay activos registrados</option>
-                ) : (
-                  <>
-                    <option value="" disabled>Selecciona símbolo...</option>
-                    {activosList.map((sym) => (
-                      <option key={sym} value={sym}>{sym}</option>
-                    ))}
-                  </>
-                )}
-              </select>
+              {newTransaction.tipoOperacion === 'compra' ? (
+                <input
+                  id="activo"
+                  name="activo"
+                  type="text"
+                  placeholder="Ej: BTC, AAPL, INTC"
+                  value={newTransaction.activo}
+                  onChange={handleInputChange}
+                  onPaste={(e) => {
+                    const text = (e.clipboardData || window.clipboardData).getData('text') || '';
+                    const cleaned = sanitizeActivo(text);
+                    if (cleaned !== text) {
+                      e.preventDefault();
+                      setNewTransaction((prev) => ({ ...prev, activo: cleaned }));
+                    }
+                  }}
+                  onCompositionStart={() => { compositionRef.current = true; }}
+                  onCompositionEnd={(e) => {
+                    compositionRef.current = false;
+                    const cleaned = sanitizeActivo(e.target.value);
+                    setNewTransaction((prev) => ({ ...prev, activo: cleaned }));
+                  }}
+                  required
+                  maxLength={10}
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500 uppercase"
+                />
+              ) : (
+                <select
+                  id="activo"
+                  name="activo"
+                  value={newTransaction.activo}
+                  onChange={handleInputChange}
+                  required
+                  className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  disabled={activosList.length === 0}
+                >
+                  {activosList.length === 0 ? (
+                    <option value="" disabled>No hay activos registrados</option>
+                  ) : (
+                    <>
+                      <option value="" disabled>Selecciona símbolo...</option>
+                      {activosList.map((sym) => (
+                        <option key={sym} value={sym}>{sym}</option>
+                      ))}
+                    </>
+                  )}
+                </select>
+              )}
               {fieldErrors.activo && (
                 <p className="mt-1 text-sm text-red-600">{fieldErrors.activo}</p>
               )}

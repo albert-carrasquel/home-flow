@@ -109,3 +109,57 @@ export const getOccurredAtFromDoc = (doc, type) => {
   
   return null;
 };
+
+/**
+ * Normalizes transaction amounts with backward compatibility for legacy documents.
+ * Establishes totalOperacion as the "source of truth" (official receipt amount).
+ * 
+ * @param {object} doc - Firestore transaction document data
+ * @returns {object} - Normalized amounts: { totalOperacionNumber, montoTotalNumber, diferenciaOperacionNumber, montoFuenteDeVerdad }
+ */
+export const normalizeTransactionAmounts = (doc) => {
+  if (!doc) {
+    return {
+      totalOperacionNumber: null,
+      montoTotalNumber: null,
+      diferenciaOperacionNumber: null,
+      montoFuenteDeVerdad: null,
+    };
+  }
+
+  // Parse totalOperacion (priority 1: source of truth)
+  let totalOperacionNumber = null;
+  if (typeof doc.totalOperacion === 'number') {
+    totalOperacionNumber = doc.totalOperacion;
+  } else if (typeof doc.totalOperacion === 'string' && doc.totalOperacion) {
+    const parsed = parseFloat(doc.totalOperacion);
+    if (!isNaN(parsed)) totalOperacionNumber = parsed;
+  }
+
+  // Parse montoTotal (priority 2: fallback for legacy docs)
+  let montoTotalNumber = null;
+  if (typeof doc.montoTotal === 'number') {
+    montoTotalNumber = doc.montoTotal;
+  } else if (typeof doc.montoTotal === 'string' && doc.montoTotal) {
+    const parsed = parseFloat(doc.montoTotal);
+    if (!isNaN(parsed)) montoTotalNumber = parsed;
+  }
+
+  // Calculate diferencia if both exist
+  let diferenciaOperacionNumber = null;
+  if (totalOperacionNumber !== null && montoTotalNumber !== null) {
+    diferenciaOperacionNumber = totalOperacionNumber - montoTotalNumber;
+  }
+
+  // Determine montoFuenteDeVerdad (official amount)
+  // Priority: totalOperacion > montoTotal
+  const montoFuenteDeVerdad = totalOperacionNumber !== null ? totalOperacionNumber : montoTotalNumber;
+
+  return {
+    totalOperacionNumber,
+    montoTotalNumber,
+    diferenciaOperacionNumber,
+    montoFuenteDeVerdad,
+  };
+};
+
