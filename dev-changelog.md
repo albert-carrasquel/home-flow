@@ -2,6 +2,24 @@
 
 Este archivo registra todos los cambios realizados en la etapa de desarrollo inicial. No se sube al repositorio (agregado en .gitignore).
 
+---
+
+**[2025-12-16] Refactor: eliminación de campo redundante "Tipo de Activo" en reportes**
+- **Motivo**: El campo "Tipo de Activo" en los filtros de reportes era redundante porque el tipo ya está implícito en el símbolo seleccionado (BTC = Cripto, AAPL = Acciones, etc.).
+- **Cambios realizados**:
+  - Eliminado `tipoActivo` del estado inicial de `reportFilters` en `src/App.jsx`
+  - Eliminado `tipoActivo` de la función de reset de filtros
+  - Eliminada la lógica de filtrado `if (reportFilters.tipoActivo !== 'todos' && r.tipoActivo !== reportFilters.tipoActivo) return false;`
+  - Eliminado el campo visual `<select name="tipoActivo">` del formulario de reportes
+- **Beneficios**:
+  - UI más limpia y simple con menos campos
+  - Reducción de confusión para el usuario
+  - Filtrado más directo por símbolo del activo
+- **Archivos modificados**: `src/App.jsx`
+- **Commit**: `aec69cf` - "refactor(reports): remove redundant 'Tipo de Activo' filter"
+
+---
+
 
 - Se renombró la aplicación de "Investment Manager" a **HomeFlow** para reflejar el scope ampliado: control tanto de inversiones como de gastos del hogar.
 - Archivos actualizados: `index.html` (título), `src/App.jsx` (encabezado principal), `README.md` (nombre y descripción breve), `package.json` y `package-lock.json` (campo `name`).
