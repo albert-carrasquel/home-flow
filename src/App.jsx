@@ -676,54 +676,42 @@ const App = () => {
       const fromDate = new Date(`${reportFilters.fechaDesde}T00:00:00`);
       const toDate = new Date(`${reportFilters.fechaHasta}T23:59:59`);
 
-      // Build query constraints
-      const constraints = [];
-      // Date range (using fechaOperacion for cashflow and fechaTransaccion for transactions)
-      const dateField = reportFilters.tipoDatos === 'inversiones' ? 'fechaTransaccion' : 'fechaOperacion';
-      constraints.push(where(dateField, '>=', fromDate));
-      constraints.push(where(dateField, '<=', toDate));
-
-      // Usuario filter
-      if (reportFilters.usuario !== 'todos') {
-        constraints.push(where('usuarioId', '==', reportFilters.usuario));
-      }
-
-      // Tipo-specific filters
-      if (reportFilters.tipoDatos === 'inversiones') {
-        if (reportFilters.operacion !== 'todas') {
-          constraints.push(where('tipoOperacion', '==', reportFilters.operacion));
-        }
-        if (reportFilters.simboloActivo !== 'todos') {
-          constraints.push(where('activo', '==', reportFilters.simboloActivo));
-        }
-        if (reportFilters.tipoActivo !== 'todos') {
-          constraints.push(where('tipoActivo', '==', reportFilters.tipoActivo));
-        }
-        if (reportFilters.monedaInv !== 'todas') {
-          constraints.push(where('moneda', '==', reportFilters.monedaInv));
-        }
-      } else {
-        if (reportFilters.tipoCashflow !== 'todos') {
-          constraints.push(where('tipo', '==', reportFilters.tipoCashflow));
-        }
-        if (reportFilters.categoria !== 'todos') {
-          constraints.push(where('categoria', '==', reportFilters.categoria));
-        }
-        if (reportFilters.monedaCash !== 'todas') {
-          constraints.push(where('moneda', '==', reportFilters.monedaCash));
-        }
-      }
-
-      const q = query(collection(db, collectionPath), ...constraints);
+      // Fetch all documents from the collection (no complex where clauses to avoid index requirements)
+      const q = query(collection(db, collectionPath));
       const snapshot = await getDocs(q);
-      const results = [];
+      const allResults = [];
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        results.push({ id: docSnap.id, ...data });
+        allResults.push({ id: docSnap.id, ...data });
       });
 
-      // Filter out anulados if not included
-      const filtered = reportFilters.incluirAnulados ? results : results.filter((r) => !r.anulada);
+      // Filter in-memory (client-side) to avoid Firestore composite index requirements
+      const dateField = reportFilters.tipoDatos === 'inversiones' ? 'fechaTransaccion' : 'fechaOperacion';
+      let filtered = allResults.filter((r) => {
+        // Date range filter
+        const docDate = r[dateField]?.toDate ? r[dateField].toDate() : (r[dateField] ? new Date(r[dateField]) : null);
+        if (!docDate || docDate < fromDate || docDate > toDate) return false;
+
+        // Usuario filter
+        if (reportFilters.usuario !== 'todos' && r.usuarioId !== reportFilters.usuario) return false;
+
+        // Tipo-specific filters
+        if (reportFilters.tipoDatos === 'inversiones') {
+          if (reportFilters.operacion !== 'todas' && r.tipoOperacion !== reportFilters.operacion) return false;
+          if (reportFilters.simboloActivo !== 'todos' && r.activo !== reportFilters.simboloActivo) return false;
+          if (reportFilters.tipoActivo !== 'todos' && r.tipoActivo !== reportFilters.tipoActivo) return false;
+          if (reportFilters.monedaInv !== 'todas' && r.moneda !== reportFilters.monedaInv) return false;
+        } else {
+          if (reportFilters.tipoCashflow !== 'todos' && r.tipo !== reportFilters.tipoCashflow) return false;
+          if (reportFilters.categoria !== 'todos' && r.categoria !== reportFilters.categoria) return false;
+          if (reportFilters.monedaCash !== 'todas' && r.moneda !== reportFilters.monedaCash) return false;
+        }
+
+        // Exclude anulados unless explicitly included
+        if (!reportFilters.incluirAnulados && r.anulada) return false;
+
+        return true;
+      });
 
       // Calculate metrics
       let metrics = {};
