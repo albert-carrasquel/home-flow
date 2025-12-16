@@ -18,10 +18,10 @@ import {
   deleteDoc,
   setLogLevel, // Importación de setLogLevel para depuración
 } from 'firebase/firestore';
-import { updateDoc, orderBy, limit, getDocs, where } from 'firebase/firestore';
+import { updateDoc, orderBy, limit, getDocs } from 'firebase/firestore';
 import { DollarSign } from 'lucide-react';
 import ConfirmationModal from './components/ConfirmationModal';
-import { formatCurrency, sanitizeDecimal, sanitizeActivo, sanitizeNombre, getUniqueActivos } from './utils/formatters';
+import { formatCurrency, sanitizeDecimal, sanitizeActivo, sanitizeNombre, getUniqueActivos, dateStringToTimestamp, getOccurredAtFromDoc } from './utils/formatters';
 
 // --- CONFIGURACIÓN GLOBAL ---
 
@@ -366,6 +366,7 @@ const App = () => {
     if (newTransaction.activo && !list.includes(newTransaction.activo.toUpperCase())) {
       setNewTransaction((prev) => ({ ...prev, activo: '' }));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [_transactions, newTransaction.usuarioId]);
 
   // (Metrics and super-admin derivation are simplified/disabled for now)
@@ -498,8 +499,9 @@ const App = () => {
       // Guardar moneda de la comisión como null si está vacía (consistencia con `comision`)
       monedaComision: newTransaction.monedaComision ? newTransaction.monedaComision : null,
       usuarioId: newTransaction.usuarioId || userId,
-      timestamp: serverTimestamp(), // fecha real de creación (para ordenar)
-      fechaTransaccion: new Date(`${newTransaction.fechaTransaccion}T00:00:00`), // fecha elegida (como Date)
+      // NEW STANDARD: createdAt (audit timestamp) and occurredAt (user-chosen date)
+      createdAt: serverTimestamp(),
+      occurredAt: dateStringToTimestamp(newTransaction.fechaTransaccion),
       exchange: newTransaction.exchange || '',
     };
     try {
@@ -573,10 +575,9 @@ const App = () => {
       tipo: newCashflow.tipo,
       monto: parseFloat(newCashflow.monto),
       moneda: newCashflow.moneda,
-      // keep both `timestamp` (used for ordering) and `fecha` for compatibility
-      timestamp: serverTimestamp(),
-      fecha: serverTimestamp(),
-      fechaOperacion: new Date(`${newCashflow.fechaOperacion}T00:00:00`),
+      // NEW STANDARD: createdAt (audit timestamp) and occurredAt (user-chosen date)
+      createdAt: serverTimestamp(),
+      occurredAt: dateStringToTimestamp(newCashflow.fechaOperacion),
       categoria: newCashflow.categoria,
       descripcion: newCashflow.descripcion || '',
       anulada: false,
@@ -612,8 +613,10 @@ const App = () => {
       const docRef = doc(db, cashflowPath, cashflowToAnnul);
       await updateDoc(docRef, {
         anulada: true,
-        anuladaAt: serverTimestamp(),
+        anuladaAt: serverTimestamp(), // legacy field (keep for compatibility)
         anuladaBy: userId || 'dev-albert',
+        voidedAt: serverTimestamp(), // NEW STANDARD
+        updatedAt: serverTimestamp(), // NEW STANDARD
       });
       handleCancelAnnul();
     } catch (err) {
@@ -686,10 +689,10 @@ const App = () => {
       });
 
       // Filter in-memory (client-side) to avoid Firestore composite index requirements
-      const dateField = reportFilters.tipoDatos === 'inversiones' ? 'fechaTransaccion' : 'fechaOperacion';
+      const dataType = reportFilters.tipoDatos === 'inversiones' ? 'inversiones' : 'cashflow';
       let filtered = allResults.filter((r) => {
-        // Date range filter
-        const docDate = r[dateField]?.toDate ? r[dateField].toDate() : (r[dateField] ? new Date(r[dateField]) : null);
+        // Date range filter using occurredAt with fallback to legacy fields
+        const docDate = getOccurredAtFromDoc(r, dataType);
         if (!docDate || docDate < fromDate || docDate > toDate) return false;
 
         // Usuario filter

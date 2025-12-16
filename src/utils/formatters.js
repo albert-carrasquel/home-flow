@@ -33,3 +33,79 @@ export const getUniqueActivos = (transactions = [], usuarioId) => {
   const setActivos = new Set(filtered.map((t) => String(t.activo).toUpperCase()).filter(Boolean));
   return Array.from(setActivos).sort();
 };
+
+/**
+ * Converts a YYYY-MM-DD string to a Firestore Timestamp at 00:00:00 in local timezone.
+ * This ensures the date chosen by the user is saved exactly as that date without timezone bugs.
+ * 
+ * @param {string} dateString - Date in YYYY-MM-DD format (from input[type="date"])
+ * @returns {Date} - Date object at 00:00:00 local time, ready to be stored as Firestore Timestamp
+ * @throws {Error} - If dateString is invalid or not in YYYY-MM-DD format
+ */
+export const dateStringToTimestamp = (dateString) => {
+  if (!dateString || typeof dateString !== 'string') {
+    throw new Error('Invalid date string: must be a non-empty string');
+  }
+  
+  // Validate YYYY-MM-DD format
+  const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRegex.test(dateString)) {
+    throw new Error(`Invalid date format: expected YYYY-MM-DD, got "${dateString}"`);
+  }
+  
+  // Parse as local date at 00:00:00 (avoids UTC conversion bugs)
+  const [year, month, day] = dateString.split('-').map(Number);
+  const localDate = new Date(year, month - 1, day, 0, 0, 0, 0);
+  
+  // Validate the date is valid (e.g., not 2025-02-30)
+  if (
+    localDate.getFullYear() !== year ||
+    localDate.getMonth() !== month - 1 ||
+    localDate.getDate() !== day
+  ) {
+    throw new Error(`Invalid date: "${dateString}" does not represent a valid calendar date`);
+  }
+  
+  return localDate;
+};
+
+/**
+ * Extracts occurredAt from a document with fallback logic for legacy fields.
+ * Priority: occurredAt > fechaTransaccion/fechaOperacion > timestamp > fecha
+ * 
+ * @param {object} doc - Firestore document data
+ * @param {string} type - 'inversiones' or 'cashflow' to determine fallback field
+ * @returns {Date|null} - Date object or null if no valid date found
+ */
+export const getOccurredAtFromDoc = (doc, type) => {
+  if (!doc) return null;
+  
+  // Priority 1: occurredAt (new standard)
+  if (doc.occurredAt?.toDate) {
+    return doc.occurredAt.toDate();
+  }
+  
+  // Priority 2: legacy date field (fechaTransaccion for inversiones, fechaOperacion for cashflow)
+  const legacyField = type === 'inversiones' ? 'fechaTransaccion' : 'fechaOperacion';
+  if (doc[legacyField]?.toDate) {
+    return doc[legacyField].toDate();
+  }
+  if (doc[legacyField] && typeof doc[legacyField] === 'string') {
+    return new Date(doc[legacyField]);
+  }
+  
+  // Priority 3: timestamp (createdAt equivalent)
+  if (doc.timestamp?.toDate) {
+    return doc.timestamp.toDate();
+  }
+  
+  // Priority 4: fecha (generic fallback)
+  if (doc.fecha?.toDate) {
+    return doc.fecha.toDate();
+  }
+  if (doc.fecha && typeof doc.fecha === 'string') {
+    return new Date(doc.fecha);
+  }
+  
+  return null;
+};

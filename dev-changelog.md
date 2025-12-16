@@ -297,3 +297,52 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
   - Ideal para uso doméstico/personal con volúmenes de datos razonables.
 - **Nota**: para colecciones extremadamente grandes (miles de registros), considera implementar paginación o límites. Para el caso de uso actual (gestión personal/familiar), el rendimiento es óptimo.
 - Archivos modificados: `src/App.jsx` (refactor completo de `handleSearchReports` para filtrado client-side).
+
+---
+
+**[2025-12-16] Estandarización de manejo de fechas en todo el proyecto (transactions + cashflow)**
+- **Objetivo**: unificar la gestión de fechas en React + Firestore para evitar inconsistencias, bugs de zona horaria y facilitar consultas/reportes.
+- **Estándar definido** (aplica a todas las entidades: `transactions` e `cashflow`):
+  1. **`createdAt`** (Firestore `serverTimestamp()`): timestamp de auditoría que registra cuándo se creó el documento en la base de datos.
+  2. **`occurredAt`** (Firestore `Timestamp`): fecha real de la operación elegida por el usuario (compra/venta o gasto/ingreso). Se guarda como Timestamp basado en el input `date` del formulario, construido a las 00:00:00 en hora local para evitar bugs de UTC.
+  3. **`updatedAt`** (opcional, Firestore `serverTimestamp()`): se setea cuando se actualiza un documento (por ejemplo al anular).
+  4. **`voidedAt`** (Firestore `serverTimestamp()`): timestamp de cuándo se anuló un registro (solo si aplica).
+
+- **Compatibilidad con datos legacy**:
+  - Los documentos existentes pueden tener campos antiguos como `timestamp`, `fecha`, `fechaTransaccion`, `fechaOperacion`.
+  - Se implementó lógica de **fallback** para leer fechas de documentos viejos sin romper funcionalidad:
+    - Para `transactions`: prioridad `occurredAt` > `fechaTransaccion` > `timestamp` > `fecha`.
+    - Para `cashflow`: prioridad `occurredAt` > `fechaOperacion` > `timestamp` > `fecha`.
+  - Los **nuevos documentos** siempre se guardan con `createdAt` + `occurredAt` (y `updatedAt`/`voidedAt` cuando corresponde).
+
+- **Implementación**:
+  1. **Función utilitaria `dateStringToTimestamp(dateString)`** (en `src/utils/formatters.js`):
+     - Convierte un string en formato `YYYY-MM-DD` (del input `date`) a un objeto `Date` a las 00:00:00 en hora local.
+     - Valida formato y fecha válida (no permite fechas inválidas como 2025-02-30).
+     - Evita bugs típicos de zona horaria (por ejemplo que se guarde como el día anterior en UTC).
+  2. **Función utilitaria `getOccurredAtFromDoc(doc, type)`** (en `src/utils/formatters.js`):
+     - Extrae `occurredAt` de un documento con fallback automático a campos legacy según el tipo (`inversiones` o `cashflow`).
+     - Retorna `Date` o `null` si no encuentra fecha válida.
+  3. **Actualización de `handleAddTransaction`** (inversiones):
+     - Ahora guarda `createdAt: serverTimestamp()` y `occurredAt: dateStringToTimestamp(newTransaction.fechaTransaccion)`.
+     - Los campos legacy (`timestamp`, `fechaTransaccion`) ya no se guardan en nuevos documentos.
+  4. **Actualización de `handleAddCashflow`** (gastos/ingresos):
+     - Ahora guarda `createdAt: serverTimestamp()` y `occurredAt: dateStringToTimestamp(newCashflow.fechaOperacion)`.
+     - Los campos legacy (`timestamp`, `fecha`, `fechaOperacion`) ya no se guardan en nuevos documentos.
+  5. **Actualización de `handleAnnulCashflow`** (anulación):
+     - Ahora guarda `voidedAt: serverTimestamp()` y `updatedAt: serverTimestamp()` al anular un registro (además del legacy `anuladaAt` para compatibilidad).
+  6. **Actualización de `handleSearchReports`** (reportes):
+     - Ahora filtra siempre por `occurredAt` usando `getOccurredAtFromDoc()` con fallback automático a campos legacy.
+     - Esto asegura que reportes funcionen correctamente tanto con documentos nuevos (con `occurredAt`) como con documentos viejos (con `fechaTransaccion`/`fechaOperacion`/etc).
+
+- **Validaciones**:
+  - En formularios: la fecha (input `date`) es **obligatoria**.
+  - No se permite "hasta" menor que "desde" en reportes.
+  - Se valida formato `YYYY-MM-DD` antes de convertir a Timestamp.
+
+- **Archivos modificados**:
+  - `src/utils/formatters.js`: añadidas funciones `dateStringToTimestamp()` y `getOccurredAtFromDoc()`.
+  - `src/App.jsx`: actualizados `handleAddTransaction`, `handleAddCashflow`, `handleAnnulCashflow`, `handleSearchReports` para usar el nuevo estándar.
+
+- **Próximos pasos** (opcional, no implementado):
+  - Si en el futuro se desea eliminar completamente los campos legacy de la UI (por ejemplo dejar de guardar `fechaTransaccion`/`fechaOperacion` como estado interno del formulario), se puede hacer sin romper compatibilidad con Firestore gracias a las funciones de fallback implementadas.
