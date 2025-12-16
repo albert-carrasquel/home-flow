@@ -281,3 +281,19 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 - Listado de resultados: tabla con columnas relevantes según tipo de datos, incluye nombre del usuario y estado si "Incluir anulados" está activo.
 - Botón "Limpiar": resetea filtros al mes actual y valores default ("Todos").
 - Archivos modificados: `src/App.jsx` (añadidos estados, handlers, consultas y UI completa del segmento).
+
+---
+
+**[2025-12-16] Fix: error en consultas de Inversiones en Reportes (índices compuestos Firestore)**
+- **Problema**: al consultar reportes de Inversiones con múltiples filtros, Firestore devolvía error "Verifica las reglas de Firestore" debido a que las múltiples cláusulas `where()` sobre diferentes campos requieren índices compuestos que no estaban configurados.
+- **Solución implementada**: cambio de estrategia de consulta para **evitar completamente el requisito de índices compuestos**:
+  1. En lugar de construir query con múltiples `where()` clauses (fechaTransaccion, usuarioId, tipoOperacion, activo, tipoActivo, moneda, etc.), ahora se trae **toda la colección** con una consulta simple.
+  2. Se aplican **todos los filtros en memoria (client-side)** usando JavaScript estándar: rango de fechas, usuario, operación, activo, tipo, moneda, incluir/excluir anulados.
+  3. Esta solución elimina completamente la dependencia de índices compuestos en Firestore y funciona inmediatamente sin configuración adicional.
+- **Ventajas**:
+  - No requiere crear índices compuestos en Firebase Console.
+  - Código más simple y mantenible.
+  - Funciona para cualquier combinación de filtros sin restricciones.
+  - Ideal para uso doméstico/personal con volúmenes de datos razonables.
+- **Nota**: para colecciones extremadamente grandes (miles de registros), considera implementar paginación o límites. Para el caso de uso actual (gestión personal/familiar), el rendimiento es óptimo.
+- Archivos modificados: `src/App.jsx` (refactor completo de `handleSearchReports` para filtrado client-side).
