@@ -18,7 +18,7 @@ import {
   deleteDoc,
   setLogLevel, // Importación de setLogLevel para depuración
 } from 'firebase/firestore';
-import { updateDoc, orderBy, limit, getDocs } from 'firebase/firestore';
+import { updateDoc, orderBy, limit, getDocs, where } from 'firebase/firestore';
 import { DollarSign } from 'lucide-react';
 import ConfirmationModal from './components/ConfirmationModal';
 import { formatCurrency, sanitizeDecimal, sanitizeActivo, sanitizeNombre, getUniqueActivos } from './utils/formatters';
@@ -185,6 +185,29 @@ const App = () => {
   const [cashflowFieldErrors, setCashflowFieldErrors] = useState({});
   const [showAnnulModal, setShowAnnulModal] = useState(false);
   const [cashflowToAnnul, setCashflowToAnnul] = useState(null);
+  // Reports states
+  const [reportFilters, setReportFilters] = useState({
+    tipoDatos: '',
+    usuario: 'todos',
+    fechaDesde: '',
+    fechaHasta: '',
+    // Inversiones filters
+    operacion: 'todas',
+    simboloActivo: 'todos',
+    tipoActivo: 'todos',
+    monedaInv: 'todas',
+    // Cashflow filters
+    tipoCashflow: 'todos',
+    categoria: 'todos',
+    medioPago: 'todos',
+    monedaCash: 'todas',
+    incluirAnulados: false,
+  });
+  const [reportResults, setReportResults] = useState([]);
+  const [reportMetrics, setReportMetrics] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportErrors, setReportErrors] = useState({});
+  const [availableActivos, setAvailableActivos] = useState([]);
   const [successMessage, setSuccessMessage] = useState(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [docToDelete, setDocToDelete] = useState(null);
@@ -599,6 +622,155 @@ const App = () => {
       handleCancelAnnul();
     }
   };
+
+  // --- REPORTS HANDLERS ---
+  const handleReportFilterChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setReportFilters((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    setReportErrors((prev) => ({ ...prev, [name]: null }));
+  };
+
+  const handleClearReportFilters = () => {
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+    setReportFilters({
+      tipoDatos: '',
+      usuario: 'todos',
+      fechaDesde: firstDay,
+      fechaHasta: lastDay,
+      operacion: 'todas',
+      simboloActivo: 'todos',
+      tipoActivo: 'todos',
+      monedaInv: 'todas',
+      tipoCashflow: 'todos',
+      categoria: 'todos',
+      medioPago: 'todos',
+      monedaCash: 'todas',
+      incluirAnulados: false,
+    });
+    setReportResults([]);
+    setReportMetrics(null);
+    setReportErrors({});
+  };
+
+  const handleSearchReports = async () => {
+    const errors = {};
+    if (!reportFilters.tipoDatos) errors.tipoDatos = 'Selecciona el tipo de datos.';
+    if (!reportFilters.fechaDesde) errors.fechaDesde = 'Indica la fecha desde.';
+    if (!reportFilters.fechaHasta) errors.fechaHasta = 'Indica la fecha hasta.';
+    if (reportFilters.fechaDesde && reportFilters.fechaHasta && reportFilters.fechaDesde > reportFilters.fechaHasta) {
+      errors.fechaHasta = 'La fecha "Hasta" debe ser mayor o igual a "Desde".';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setReportErrors(errors);
+      return;
+    }
+
+    setReportLoading(true);
+    setReportErrors({});
+
+    try {
+      const collectionPath = reportFilters.tipoDatos === 'inversiones' ? getTransactionsCollectionPath(appId) : getCashflowCollectionPath(appId);
+      const fromDate = new Date(`${reportFilters.fechaDesde}T00:00:00`);
+      const toDate = new Date(`${reportFilters.fechaHasta}T23:59:59`);
+
+      // Build query constraints
+      const constraints = [];
+      // Date range (using fechaOperacion for cashflow and fechaTransaccion for transactions)
+      const dateField = reportFilters.tipoDatos === 'inversiones' ? 'fechaTransaccion' : 'fechaOperacion';
+      constraints.push(where(dateField, '>=', fromDate));
+      constraints.push(where(dateField, '<=', toDate));
+
+      // Usuario filter
+      if (reportFilters.usuario !== 'todos') {
+        constraints.push(where('usuarioId', '==', reportFilters.usuario));
+      }
+
+      // Tipo-specific filters
+      if (reportFilters.tipoDatos === 'inversiones') {
+        if (reportFilters.operacion !== 'todas') {
+          constraints.push(where('tipoOperacion', '==', reportFilters.operacion));
+        }
+        if (reportFilters.simboloActivo !== 'todos') {
+          constraints.push(where('activo', '==', reportFilters.simboloActivo));
+        }
+        if (reportFilters.tipoActivo !== 'todos') {
+          constraints.push(where('tipoActivo', '==', reportFilters.tipoActivo));
+        }
+        if (reportFilters.monedaInv !== 'todas') {
+          constraints.push(where('moneda', '==', reportFilters.monedaInv));
+        }
+      } else {
+        if (reportFilters.tipoCashflow !== 'todos') {
+          constraints.push(where('tipo', '==', reportFilters.tipoCashflow));
+        }
+        if (reportFilters.categoria !== 'todos') {
+          constraints.push(where('categoria', '==', reportFilters.categoria));
+        }
+        if (reportFilters.monedaCash !== 'todas') {
+          constraints.push(where('moneda', '==', reportFilters.monedaCash));
+        }
+      }
+
+      const q = query(collection(db, collectionPath), ...constraints);
+      const snapshot = await getDocs(q);
+      const results = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        results.push({ id: docSnap.id, ...data });
+      });
+
+      // Filter out anulados if not included
+      const filtered = reportFilters.incluirAnulados ? results : results.filter((r) => !r.anulada);
+
+      // Calculate metrics
+      let metrics = {};
+      if (reportFilters.tipoDatos === 'inversiones') {
+        const compras = filtered.filter((r) => r.tipoOperacion === 'compra');
+        const ventas = filtered.filter((r) => r.tipoOperacion === 'venta');
+        const totalCompras = compras.reduce((sum, r) => sum + (r.montoTotal || 0), 0);
+        const totalVentas = ventas.reduce((sum, r) => sum + (r.montoTotal || 0), 0);
+        metrics = { count: filtered.length, totalCompras, totalVentas, neto: totalVentas - totalCompras };
+      } else {
+        const gastos = filtered.filter((r) => r.tipo === 'gasto');
+        const ingresos = filtered.filter((r) => r.tipo === 'ingreso');
+        const totalGastos = gastos.reduce((sum, r) => sum + (r.monto || 0), 0);
+        const totalIngresos = ingresos.reduce((sum, r) => sum + (r.monto || 0), 0);
+        metrics = { count: filtered.length, totalGastos, totalIngresos, neto: totalIngresos - totalGastos };
+      }
+
+      setReportResults(filtered);
+      setReportMetrics(metrics);
+    } catch (err) {
+      console.error('Error fetching reports:', err);
+      setError('Error al consultar reportes. Verifica las reglas de Firestore.');
+    } finally {
+      setReportLoading(false);
+    }
+  };
+
+  // Fetch available activos for reports simboloActivo filter
+  useEffect(() => {
+    if (!db || reportFilters.tipoDatos !== 'inversiones') return;
+    const fetchActivos = async () => {
+      try {
+        const transactionsPath = getTransactionsCollectionPath(appId);
+        const q = query(collection(db, transactionsPath));
+        const snapshot = await getDocs(q);
+        const activos = new Set();
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (data.activo) activos.add(data.activo);
+        });
+        setAvailableActivos(Array.from(activos).sort());
+      } catch (e) {
+        console.error('Error fetching activos for reports:', e);
+      }
+    };
+    fetchActivos();
+  }, [db, reportFilters.tipoDatos]);
 
   // Manejo del modal de confirmación de borrado
   const _handleShowDeleteConfirm = (id) => {
@@ -1070,7 +1242,263 @@ const App = () => {
           <h1 className="text-2xl font-extrabold text-gray-700 flex items-center">Reportes</h1>
           <button className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 font-bold hover:bg-gray-300" onClick={() => setTab('')}>Volver</button>
         </header>
-        <div className="bg-white rounded-xl shadow-xl p-8 text-center text-gray-500">Próximamente: Panel de reportes</div>
+
+        {/* Filters panel */}
+        <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-2xl p-8 mb-6">
+          <h2 className="text-xl font-bold mb-4 text-gray-700">Filtros de consulta</h2>
+          <div className="space-y-4">
+            {/* General filters */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Tipo de datos *</label>
+                <select name="tipoDatos" value={reportFilters.tipoDatos} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500">
+                  <option value="">Selecciona tipo...</option>
+                  <option value="inversiones">Inversiones</option>
+                  <option value="cashflow">Cashflow</option>
+                </select>
+                {reportErrors.tipoDatos && <p className="mt-1 text-sm text-red-600">{reportErrors.tipoDatos}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Usuario *</label>
+                <select name="usuario" value={reportFilters.usuario} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500">
+                  <option value="todos">Todos</option>
+                  {Object.entries(USER_NAMES).map(([uid, name]) => (
+                    <option key={uid} value={uid}>{name.split(' ')[0]}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="flex items-center mt-6">
+                  <input type="checkbox" name="incluirAnulados" checked={reportFilters.incluirAnulados} onChange={handleReportFilterChange} className="mr-2" />
+                  <span className="text-sm text-gray-700">Incluir anulados</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Fecha Desde *</label>
+                <input type="date" name="fechaDesde" value={reportFilters.fechaDesde} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500" />
+                {reportErrors.fechaDesde && <p className="mt-1 text-sm text-red-600">{reportErrors.fechaDesde}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Fecha Hasta *</label>
+                <input type="date" name="fechaHasta" value={reportFilters.fechaHasta} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500" />
+                {reportErrors.fechaHasta && <p className="mt-1 text-sm text-red-600">{reportErrors.fechaHasta}</p>}
+              </div>
+            </div>
+
+            {/* Conditional filters for inversiones */}
+            {reportFilters.tipoDatos === 'inversiones' && (
+              <div className="border-t pt-4">
+                <h3 className="text-md font-semibold mb-3 text-gray-600">Filtros de Inversiones</h3>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Operación</label>
+                    <select name="operacion" value={reportFilters.operacion} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500">
+                      <option value="todas">Todas</option>
+                      <option value="compra">Compra</option>
+                      <option value="venta">Venta</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Símbolo Activo</label>
+                    <select name="simboloActivo" value={reportFilters.simboloActivo} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500">
+                      <option value="todos">Todos</option>
+                      {availableActivos.map((sym) => (
+                        <option key={sym} value={sym}>{sym}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Tipo Activo</label>
+                    <select name="tipoActivo" value={reportFilters.tipoActivo} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500">
+                      <option value="todos">Todos</option>
+                      <option value="Cripto">Cripto</option>
+                      <option value="Acciones">Acciones</option>
+                      <option value="Cedears">Cedears</option>
+                      <option value="Lecap">Lecap</option>
+                      <option value="Letra">Letra</option>
+                      <option value="Bono">Bono</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Moneda</label>
+                    <select name="monedaInv" value={reportFilters.monedaInv} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500">
+                      <option value="todas">Todas</option>
+                      <option value="ARS">ARS</option>
+                      <option value="USD">USD</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Conditional filters for cashflow */}
+            {reportFilters.tipoDatos === 'cashflow' && (
+              <div className="border-t pt-4">
+                <h3 className="text-md font-semibold mb-3 text-gray-600">Filtros de Cashflow</h3>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Tipo</label>
+                    <select name="tipoCashflow" value={reportFilters.tipoCashflow} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500">
+                      <option value="todos">Todos</option>
+                      <option value="gasto">Gasto</option>
+                      <option value="ingreso">Ingreso</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Categoría</label>
+                    <select name="categoria" value={reportFilters.categoria} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500">
+                      <option value="todos">Todos</option>
+                      <option value="Comida">Comida</option>
+                      <option value="Servicios">Servicios</option>
+                      <option value="Transporte">Transporte</option>
+                      <option value="Salud">Salud</option>
+                      <option value="Entretenimiento">Entretenimiento</option>
+                      <option value="Sueldo">Sueldo</option>
+                      <option value="Otros">Otros</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Medio de Pago</label>
+                    <select name="medioPago" value={reportFilters.medioPago} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500">
+                      <option value="todos">Todos</option>
+                      <option value="Efectivo">Efectivo</option>
+                      <option value="Tarjeta">Tarjeta</option>
+                      <option value="Transferencia">Transferencia</option>
+                      <option value="Débito">Débito</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Moneda</label>
+                    <select name="monedaCash" value={reportFilters.monedaCash} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500">
+                      <option value="todas">Todas</option>
+                      <option value="ARS">ARS</option>
+                      <option value="USD">USD</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="flex gap-4 mt-6">
+              <button onClick={handleSearchReports} disabled={reportLoading} className="px-6 py-2 rounded-xl bg-gray-700 text-white font-medium hover:bg-gray-800 disabled:bg-gray-400">
+                {reportLoading ? 'Buscando...' : 'Buscar'}
+              </button>
+              <button onClick={handleClearReportFilters} className="px-6 py-2 rounded-xl bg-gray-200 text-gray-700 font-medium hover:bg-gray-300">Limpiar</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Results panel */}
+        {reportMetrics && (
+          <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-2xl p-8 mb-6">
+            <h2 className="text-xl font-bold mb-4 text-gray-700">Métricas</h2>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="p-4 bg-gray-50 rounded-xl">
+                <div className="text-sm text-gray-500">Registros</div>
+                <div className="text-2xl font-bold">{reportMetrics.count}</div>
+              </div>
+              {reportFilters.tipoDatos === 'inversiones' ? (
+                <>
+                  <div className="p-4 bg-green-50 rounded-xl">
+                    <div className="text-sm text-gray-500">Total Compras</div>
+                    <div className="text-2xl font-bold text-green-700">{formatCurrency(reportMetrics.totalCompras, reportFilters.monedaInv !== 'todas' ? reportFilters.monedaInv : 'ARS')}</div>
+                  </div>
+                  <div className="p-4 bg-red-50 rounded-xl">
+                    <div className="text-sm text-gray-500">Total Ventas</div>
+                    <div className="text-2xl font-bold text-red-700">{formatCurrency(reportMetrics.totalVentas, reportFilters.monedaInv !== 'todas' ? reportFilters.monedaInv : 'ARS')}</div>
+                  </div>
+                  <div className="p-4 bg-indigo-50 rounded-xl">
+                    <div className="text-sm text-gray-500">Neto</div>
+                    <div className="text-2xl font-bold text-indigo-700">{formatCurrency(reportMetrics.neto, reportFilters.monedaInv !== 'todas' ? reportFilters.monedaInv : 'ARS')}</div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="p-4 bg-red-50 rounded-xl">
+                    <div className="text-sm text-gray-500">Total Gastos</div>
+                    <div className="text-2xl font-bold text-red-700">{formatCurrency(reportMetrics.totalGastos, reportFilters.monedaCash !== 'todas' ? reportFilters.monedaCash : 'ARS')}</div>
+                  </div>
+                  <div className="p-4 bg-green-50 rounded-xl">
+                    <div className="text-sm text-gray-500">Total Ingresos</div>
+                    <div className="text-2xl font-bold text-green-700">{formatCurrency(reportMetrics.totalIngresos, reportFilters.monedaCash !== 'todas' ? reportFilters.monedaCash : 'ARS')}</div>
+                  </div>
+                  <div className="p-4 bg-indigo-50 rounded-xl">
+                    <div className="text-sm text-gray-500">Neto</div>
+                    <div className="text-2xl font-bold text-indigo-700">{formatCurrency(reportMetrics.neto, reportFilters.monedaCash !== 'todas' ? reportFilters.monedaCash : 'ARS')}</div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <h3 className="text-lg font-semibold mb-3 text-gray-700">Listado de registros</h3>
+            {reportResults.length === 0 ? (
+              <div className="text-sm text-gray-500">No se encontraron registros para esos filtros.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fecha</th>
+                      {reportFilters.tipoDatos === 'inversiones' ? (
+                        <>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Operación</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Símbolo</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo Activo</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Monto Total</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Moneda</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipo</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Categoría</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Monto</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Moneda</th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Descripción</th>
+                        </>
+                      )}
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Usuario</th>
+                      {reportFilters.incluirAnulados && (
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Estado</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {reportResults.map((r) => (
+                      <tr key={r.id}>
+                        <td className="px-4 py-3 text-sm text-gray-900">{(r.fechaTransaccion?.toDate ? r.fechaTransaccion.toDate() : r.fechaOperacion?.toDate ? r.fechaOperacion.toDate() : new Date()).toLocaleDateString()}</td>
+                        {reportFilters.tipoDatos === 'inversiones' ? (
+                          <>
+                            <td className="px-4 py-3 text-sm text-gray-900">{r.tipoOperacion}</td>
+                            <td className="px-4 py-3 text-sm text-gray-900">{r.activo}</td>
+                            <td className="px-4 py-3 text-sm text-gray-900">{r.tipoActivo}</td>
+                            <td className="px-4 py-3 text-sm text-gray-900">{formatCurrency(r.montoTotal || 0, r.moneda)}</td>
+                            <td className="px-4 py-3 text-sm text-gray-900">{r.moneda}</td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-4 py-3 text-sm text-gray-900">{r.tipo}</td>
+                            <td className="px-4 py-3 text-sm text-gray-900">{r.categoria}</td>
+                            <td className="px-4 py-3 text-sm text-gray-900">{formatCurrency(r.monto || 0, r.moneda)}</td>
+                            <td className="px-4 py-3 text-sm text-gray-900">{r.moneda}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{r.descripcion || '-'}</td>
+                          </>
+                        )}
+                        <td className="px-4 py-3 text-sm text-gray-900">{USER_NAMES[r.usuarioId]?.split(' ')[0] || 'Usuario'}</td>
+                        {reportFilters.incluirAnulados && (
+                          <td className="px-4 py-3 text-sm">{r.anulada ? <span className="text-red-600 font-semibold">ANULADA</span> : <span className="text-green-600">Activa</span>}</td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }

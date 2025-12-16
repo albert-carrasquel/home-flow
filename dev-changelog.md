@@ -263,3 +263,21 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 - Se corrigió la dependencia en el `useEffect` de cashflows para que **siempre** obtenga y muestre los últimos 5 registros (anulados o no) al iniciar la app o al realizar cualquier cambio en la colección, independientemente del `tab` seleccionado.
 - Ahora la lista de últimos 5 se mantiene actualizada en tiempo real y no se limita a una pestaña específica; al entrar en "Gastos", siempre verás los últimos 5 movimientos para evitar registros duplicados.
 - Archivos modificados: `src/App.jsx` (removido `tab !== 'gastos'` de la condición del effect).
+
+---
+
+**[2025-12-16] Implementación completa: segmento "Reportes" con filtros y consultas por rango**
+- Se añadió el segmento **Reportes** completo: permite consultar datos de Inversiones y Cashflow sin modificar registros (read-only).
+- Filtros implementados:
+  - Generales (obligatorios): Tipo de datos (Inversiones/Cashflow), Usuario (Todos/Albert/Haydee), Rango de fechas (Desde/Hasta), checkbox "Incluir anulados".
+  - Condicionales para Inversiones: Operación (Todas/Compra/Venta), Símbolo Activo, Tipo Activo, Moneda.
+  - Condicionales para Cashflow: Tipo (Todos/Gasto/Ingreso), Categoría, Medio de Pago, Moneda.
+- Validaciones: fechaDesde <= fechaHasta, campos obligatorios con errores inline, selects con valores predefinidos (no texto libre).
+- Consultas Firestore: se ejecutan bajo demanda (botón "Buscar"), filtran por rango de fechas (`fechaTransaccion` para inversiones, `fechaOperacion` para cashflow), usuario y filtros opcionales; no usan `onSnapshot` (sin suscripción en tiempo real).
+- Métricas mostradas:
+  - Para Inversiones: Total Compras, Total Ventas, Neto (Ventas - Compras).
+  - Para Cashflow: Total Gastos, Total Ingresos, Neto (Ingresos - Gastos).
+  - Cantidad de registros encontrados.
+- Listado de resultados: tabla con columnas relevantes según tipo de datos, incluye nombre del usuario y estado si "Incluir anulados" está activo.
+- Botón "Limpiar": resetea filtros al mes actual y valores default ("Todos").
+- Archivos modificados: `src/App.jsx` (añadidos estados, handlers, consultas y UI completa del segmento).
