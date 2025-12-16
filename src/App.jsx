@@ -18,7 +18,7 @@ import {
   deleteDoc,
   setLogLevel, // Importación de setLogLevel para depuración
 } from 'firebase/firestore';
-import { updateDoc, orderBy, limit } from 'firebase/firestore';
+import { updateDoc, orderBy, limit, getDocs } from 'firebase/firestore';
 import { DollarSign } from 'lucide-react';
 import ConfirmationModal from './components/ConfirmationModal';
 import { formatCurrency, sanitizeDecimal, sanitizeActivo, sanitizeNombre, getUniqueActivos } from './utils/formatters';
@@ -288,17 +288,35 @@ const App = () => {
 
     const unsubscribe = onSnapshot(
       q,
-      (snapshot) => {
+      async (snapshot) => {
         const fetched = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data();
           fetched.push({ id: docSnap.id, ...data, timestamp: data.timestamp?.toDate ? data.timestamp.toDate() : new Date() });
         });
+
+        // If there are no results (e.g., older records only have `fecha` but not `timestamp`),
+        // fallback to fetch by `fecha` so existing docs appear in the 'Últimos 5'.
+        if (fetched.length === 0) {
+          try {
+            const fallbackQ = query(collection(db, cashflowPath), orderBy('fecha', 'desc'), limit(5));
+            const fallbackSnap = await getDocs(fallbackQ);
+            const fallback = [];
+            fallbackSnap.forEach((docSnap) => {
+              const data = docSnap.data();
+              fallback.push({ id: docSnap.id, ...data, timestamp: data.timestamp?.toDate ? data.timestamp.toDate() : (data.fecha?.toDate ? data.fecha.toDate() : new Date()) });
+            });
+            setCashflows(fallback);
+            return;
+          } catch (e) {
+            console.error('Error fetching fallback cashflow by fecha:', e);
+          }
+        }
+
         setCashflows(fetched);
       },
       (err) => {
         console.error('Error fetching cashflow:', err);
-        // non-fatal: show as general error
         setError('Error fetching cashflow: Problema de red o configuración.');
       },
     );
@@ -521,6 +539,8 @@ const App = () => {
       tipo: newCashflow.tipo,
       monto: parseFloat(newCashflow.monto),
       moneda: newCashflow.moneda,
+      // keep both `timestamp` (used for ordering) and `fecha` for compatibility
+      timestamp: serverTimestamp(),
       fecha: serverTimestamp(),
       fechaOperacion: new Date(`${newCashflow.fechaOperacion}T00:00:00`),
       categoria: newCashflow.categoria,
