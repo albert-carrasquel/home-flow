@@ -115,47 +115,28 @@
 /* Feature cards for home screen */
 .hf-features-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: var(--hf-space-lg);
   margin-top: var(--hf-space-2xl);
 }
 
-.hf-feature-card {
-  background: linear-gradient(135deg, var(--hf-accent-cyan), var(--hf-accent-blue));
-  color: var(--hf-bg-primary);
-  padding: var(--hf-space-lg) var(--hf-space-xl);
-  border-radius: var(--hf-radius-lg);
-  border: none;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--hf-transition-base);
-  box-shadow: var(--hf-glow-cyan);
+@media (max-width: 768px) {
+  .hf-features-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hf-features-grid .hf-button {
+  padding: 1rem 1.5rem;
+  font-size: 1.125rem;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: var(--hf-space-md);
-  min-height: 60px;
-}
-
-.hf-feature-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 0 30px rgba(68, 241, 224, 0.5);
-  filter: brightness(1.1);
-}
-
-.hf-feature-card:active {
-  transform: translateY(0);
 }
 
 .hf-feature-icon {
   font-size: 1.5rem;
-}
-
-.hf-feature-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: inherit;
 }
 
 /* Section headers with icons */
