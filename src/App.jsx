@@ -194,7 +194,6 @@ const App = () => {
     // Inversiones filters
     operacion: 'todas',
     simboloActivo: 'todos',
-    tipoActivo: 'todos',
     monedaInv: 'todas',
     // Cashflow filters
     tipoCashflow: 'todos',
@@ -659,7 +658,6 @@ const App = () => {
       fechaHasta: lastDay,
       operacion: 'todas',
       simboloActivo: 'todos',
-      tipoActivo: 'todos',
       monedaInv: 'todas',
       tipoCashflow: 'todos',
       categoria: 'todos',
@@ -717,7 +715,6 @@ const App = () => {
         if (reportFilters.tipoDatos === 'inversiones') {
           if (reportFilters.operacion !== 'todas' && r.tipoOperacion !== reportFilters.operacion) return false;
           if (reportFilters.simboloActivo !== 'todos' && r.activo !== reportFilters.simboloActivo) return false;
-          if (reportFilters.tipoActivo !== 'todos' && r.tipoActivo !== reportFilters.tipoActivo) return false;
           if (reportFilters.monedaInv !== 'todas' && r.moneda !== reportFilters.monedaInv) return false;
         } else {
           if (reportFilters.tipoCashflow !== 'todos' && r.tipo !== reportFilters.tipoCashflow) return false;
@@ -1342,18 +1339,6 @@ const App = () => {
                       {availableActivos.map((sym) => (
                         <option key={sym} value={sym}>{sym}</option>
                       ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Tipo Activo</label>
-                    <select name="tipoActivo" value={reportFilters.tipoActivo} onChange={handleReportFilterChange} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-xl shadow-sm focus:ring-gray-500 focus:border-gray-500">
-                      <option value="todos">Todos</option>
-                      <option value="Cripto">Cripto</option>
-                      <option value="Acciones">Acciones</option>
-                      <option value="Cedears">Cedears</option>
-                      <option value="Lecap">Lecap</option>
-                      <option value="Letra">Letra</option>
-                      <option value="Bono">Bono</option>
                     </select>
                   </div>
                   <div>
