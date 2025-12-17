@@ -4,6 +4,83 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 
 ---
 
+**[2025-12-17] Módulo de Análisis P&L con FIFO para Inversiones**
+- **Objetivo**: Implementar análisis profesional de Profit & Loss (P&L) con metodología FIFO para la sección de Reportes → Inversiones.
+- **Archivo nuevo creado**: `src/utils/reporting.js` (354 líneas)
+  - **Función principal exportada**: `calculateInvestmentReport(transactions, filtros)`
+    - Input: Array de transacciones ya filtradas
+    - Output: Objeto con resumen global, análisis por activo, trades cerrados y posiciones abiertas
+  - **Algoritmo FIFO implementado**:
+    - Agrupación por `usuarioId_activo_moneda` (cada combinación se analiza independientemente)
+    - Ordenamiento cronológico estricto por `occurredAt` (con fallback a `fechaTransaccion`)
+    - Cola de lotes abiertos (`openLots[]`) que mantiene compras pendientes de venta
+    - Al procesar compra: añade lote a cola con `{ cantidad, precioUnitario, fecha, comision }`
+    - Al procesar venta: consume lotes FIFO (primero entrado, primero salido)
+      - Calcula P&L por trozo: `(precioVenta - precioCompra) * cantidadAsignada`
+      - Acumula: totalInvertido, totalRecuperado, P&L neto y P&L %
+      - Genera trade cerrado con detalles de compras asociadas
+    - Maneja ventas parciales (puede consumir múltiples lotes de compra)
+    - **Advertencia**: Si venta sin compra previa (venta en corto), emite `console.warn()` y la ignora en análisis
+  - **Cálculos de métricas**:
+    - Promedio compra = totalInvertido / cantidadCerrada
+    - Promedio venta = totalRecuperado / cantidadCerrada
+    - P&L neto = totalRecuperado - totalInvertido
+    - P&L % = (pnlNeto / totalInvertido) * 100
+  - **Estructura de retorno**:
+    ```javascript
+    {
+      resumenGlobal: { totalInvertido, totalRecuperado, pnlNeto, pnlPct },
+      porActivo: [{ activo, moneda, cantidadCerrada, promedioCompra, promedioVenta, 
+                    totalInvertido, totalRecuperado, pnlNeto, pnlPct }],
+      trades: [{ usuarioId, activo, cantidad, detalleCompras[], detalleVenta, 
+                 montoInvertido, montoRecuperado, pnlNeto, pnlPct }],
+      posicionesAbiertas: [{ usuarioId, activo, cantidadRestante, promedioCompra, montoInvertido }]
+    }
+    ```
+- **Integración en App.jsx**:
+  - **Import agregado**: `import { calculateInvestmentReport } from './utils/reporting'` (línea 24)
+  - **Nuevo estado**: `const [investmentReport, setInvestmentReport] = useState(null)` (línea 218)
+  - **Modificación de `handleSearchReports`** (líneas 740-760):
+    - Cuando `tipoDatos === 'inversiones'`: llama a `calculateInvestmentReport(filtered, reportFilters)`
+    - Almacena resultado en `investmentReport` state
+    - Propaga métricas P&L a `reportMetrics` usando spread: `...pnlReport.resumenGlobal`
+    - Cuando es cashflow: limpia `investmentReport` con `setInvestmentReport(null)`
+- **UI actualizada en Reportes → Inversiones**:
+  - **Métricas principales** (4 tarjetas):
+    - Total Invertido (verde/positivo)
+    - Total Recuperado (azul)
+    - P&L Neto (verde si positivo, rojo si negativo)
+    - P&L % (porcentaje con 2 decimales, color según signo)
+  - **Nueva tabla "Análisis P&L por Activo"** (líneas 1545-1584):
+    - Columnas: Activo, Moneda, Cant. Cerrada, Prom. Compra, Prom. Venta, Total Invertido, Total Recuperado, P&L Neto, P&L %
+    - Formateo de moneda según moneda del activo
+    - Colores en P&L: verde si positivo, rojo si negativo
+    - Cantidad cerrada: formato con 4 decimales
+    - P&L %: formato con 2 decimales
+  - **Condicional de visibilidad**: solo muestra tabla si `investmentReport.porActivo.length > 0`
+- **Restricciones respetadas**:
+  - ❌ NO se modificó autenticación (SUPER_ADMINS, DEV_BYPASS_AUTH, login flow intactos)
+  - ❌ NO se cambió schema de Firestore (sin agregar campos nuevos)
+  - ✅ Estrategia de filtros client-side mantenida (evita índices compuestos)
+  - ✅ Todos los cálculos en memoria a partir de datos ya filtrados
+  - ✅ Tabs Inversiones y Gastos/Ingresos funcionan igual que antes
+- **Comportamiento FIFO**:
+  - **Correcto**: Solo empareja ventas con compras que ocurrieron cronológicamente antes
+  - **Limitación intencional**: Ventas sin compra previa (short selling) se ignoran en análisis P&L
+  - **Advertencia en consola**: `console.warn()` cuando detecta venta sin lotes disponibles
+  - **Agrupación por moneda**: BTC USD y BTC ARS se tratan como activos separados
+- **Estado del código**:
+  - ✅ Compilación sin errores (verificado con eslint)
+  - ✅ Servidor dev corriendo en localhost:5174
+  - ✅ Engine FIFO completo y funcional
+  - ✅ UI integrada y mostrando métricas correctamente
+- **Testing pendiente**: Usuario realizará pruebas con datos reales para validar cálculos FIFO
+- **Archivos modificados**:
+  - `src/utils/reporting.js` (nuevo)
+  - `src/App.jsx` (integración del engine y actualización de UI)
+
+---
+
 **[2025-12-16] UI: Transformación completa a diseño Dark Fintech Premium**
 - **Objetivo**: Transformar el diseño visual completo de HomeFlow a un estilo dark fintech moderno y profesional sin modificar ninguna lógica de negocio.
 - **Paleta de colores**:

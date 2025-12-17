@@ -22,6 +22,7 @@ import { updateDoc, orderBy, limit, getDocs } from 'firebase/firestore';
 import logo from './assets/logo.png';
 import ConfirmationModal from './components/ConfirmationModal';
 import { formatCurrency, sanitizeDecimal, sanitizeActivo, sanitizeNombre, getUniqueActivos, dateStringToTimestamp, getOccurredAtFromDoc } from './utils/formatters';
+import { calculateInvestmentReport } from './utils/reporting';
 
 // --- CONFIGURACIÓN GLOBAL ---
 
@@ -212,6 +213,8 @@ const App = () => {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportErrors, setReportErrors] = useState({});
   const [availableActivos, setAvailableActivos] = useState([]);
+  // Investment P&L report state
+  const [investmentReport, setInvestmentReport] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [docToDelete, setDocToDelete] = useState(null);
@@ -736,12 +739,27 @@ const App = () => {
       // Calculate metrics
       let metrics = {};
       if (reportFilters.tipoDatos === 'inversiones') {
+        // Use investment P&L engine for inversiones
+        const pnlReport = calculateInvestmentReport(filtered, reportFilters);
+        setInvestmentReport(pnlReport);
+        
+        // Keep basic metrics for compatibility
         const compras = filtered.filter((r) => r.tipoOperacion === 'compra');
         const ventas = filtered.filter((r) => r.tipoOperacion === 'venta');
         const totalCompras = compras.reduce((sum, r) => sum + (r.montoTotal || 0), 0);
         const totalVentas = ventas.reduce((sum, r) => sum + (r.montoTotal || 0), 0);
-        metrics = { count: filtered.length, totalCompras, totalVentas, neto: totalVentas - totalCompras };
+        metrics = { 
+          count: filtered.length, 
+          totalCompras, 
+          totalVentas, 
+          neto: totalVentas - totalCompras,
+          // Add P&L metrics
+          ...pnlReport.resumenGlobal
+        };
       } else {
+        // Clear investment report for cashflow
+        setInvestmentReport(null);
+        
         const gastos = filtered.filter((r) => r.tipo === 'gasto');
         const ingresos = filtered.filter((r) => r.tipo === 'ingreso');
         const totalGastos = gastos.reduce((sum, r) => sum + (r.monto || 0), 0);
@@ -1462,16 +1480,24 @@ const App = () => {
               {reportFilters.tipoDatos === 'inversiones' ? (
                 <>
                   <div className="hf-metric-card">
-                    <div className="hf-metric-label">Total Compras</div>
-                    <div className="hf-metric-value hf-metric-value-positive">{formatCurrency(reportMetrics.totalCompras, reportFilters.monedaInv !== 'todas' ? reportFilters.monedaInv : 'ARS')}</div>
+                    <div className="hf-metric-label">Total Invertido</div>
+                    <div className="hf-metric-value hf-metric-value-positive">{formatCurrency(reportMetrics.totalInvertido || 0, reportFilters.monedaInv !== 'todas' ? reportFilters.monedaInv : 'ARS')}</div>
                   </div>
                   <div className="hf-metric-card">
-                    <div className="hf-metric-label">Total Ventas</div>
-                    <div className="hf-metric-value" style={{color: 'var(--hf-accent-blue)'}}>{formatCurrency(reportMetrics.totalVentas, reportFilters.monedaInv !== 'todas' ? reportFilters.monedaInv : 'ARS')}</div>
+                    <div className="hf-metric-label">Total Recuperado</div>
+                    <div className="hf-metric-value" style={{color: 'var(--hf-accent-blue)'}}>{formatCurrency(reportMetrics.totalRecuperado || 0, reportFilters.monedaInv !== 'todas' ? reportFilters.monedaInv : 'ARS')}</div>
                   </div>
                   <div className="hf-metric-card">
-                    <div className="hf-metric-label">Neto</div>
-                    <div className="hf-metric-value">{formatCurrency(reportMetrics.neto, reportFilters.monedaInv !== 'todas' ? reportFilters.monedaInv : 'ARS')}</div>
+                    <div className="hf-metric-label">P&L Neto</div>
+                    <div className={`hf-metric-value ${(reportMetrics.pnlNeto || 0) >= 0 ? 'hf-metric-value-positive' : 'hf-metric-value-negative'}`}>
+                      {formatCurrency(reportMetrics.pnlNeto || 0, reportFilters.monedaInv !== 'todas' ? reportFilters.monedaInv : 'ARS')}
+                    </div>
+                  </div>
+                  <div className="hf-metric-card">
+                    <div className="hf-metric-label">P&L %</div>
+                    <div className={`hf-metric-value ${(reportMetrics.pnlPct || 0) >= 0 ? 'hf-metric-value-positive' : 'hf-metric-value-negative'}`}>
+                      {(reportMetrics.pnlPct || 0).toFixed(2)}%
+                    </div>
                   </div>
                 </>
               ) : (
@@ -1491,6 +1517,49 @@ const App = () => {
                 </>
               )}
             </div>
+
+            {/* Investment P&L Analysis Table */}
+            {reportFilters.tipoDatos === 'inversiones' && investmentReport && investmentReport.porActivo.length > 0 && (
+              <div style={{marginTop: 'var(--hf-space-xl)', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: 'var(--hf-space-lg)'}}>
+                <h3 className="text-lg font-semibold mb-3">Análisis P&L por Activo</h3>
+                <div className="hf-table-container">
+                  <table className="hf-table">
+                    <thead>
+                      <tr>
+                        <th>Activo</th>
+                        <th>Moneda</th>
+                        <th>Cant. Cerrada</th>
+                        <th>Prom. Compra</th>
+                        <th>Prom. Venta</th>
+                        <th>Total Invertido</th>
+                        <th>Total Recuperado</th>
+                        <th>P&L Neto</th>
+                        <th>P&L %</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {investmentReport.porActivo.map((asset, idx) => (
+                        <tr key={idx}>
+                          <td style={{fontWeight: '600'}}>{asset.activo}</td>
+                          <td>{asset.moneda}</td>
+                          <td>{asset.cantidadCerrada.toFixed(4)}</td>
+                          <td>{formatCurrency(asset.promedioCompra, asset.moneda)}</td>
+                          <td>{formatCurrency(asset.promedioVenta, asset.moneda)}</td>
+                          <td>{formatCurrency(asset.totalInvertido, asset.moneda)}</td>
+                          <td>{formatCurrency(asset.totalRecuperado, asset.moneda)}</td>
+                          <td className={asset.pnlNeto >= 0 ? 'hf-metric-value-positive' : 'hf-metric-value-negative'}>
+                            {formatCurrency(asset.pnlNeto, asset.moneda)}
+                          </td>
+                          <td className={asset.pnlPct >= 0 ? 'hf-metric-value-positive' : 'hf-metric-value-negative'}>
+                            {asset.pnlPct.toFixed(2)}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             <h3 className="text-lg font-semibold mb-3 mt-6">Listado de registros</h3>
             {reportResults.length === 0 ? (
