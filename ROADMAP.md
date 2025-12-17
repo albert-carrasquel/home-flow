@@ -54,15 +54,32 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
 
 ---
 
-### 3. Integración de Precios en Tiempo Real ⭐⭐⭐⭐
-**Estado**: ⏳ PENDIENTE
-**Problema**: No sabes el valor actual de tus inversiones.
+### ✅ 3. Integración de Precios en Tiempo Real ⭐⭐⭐⭐
+**Estado**: ✅ COMPLETADO
+**Problema**: No había forma de saber el valor actual de las inversiones.
 **Solución**:
-- [ ] APIs gratuitas: CoinGecko (crypto), Alpha Vantage (stocks), IOL API (mercado argentino)
-- [ ] Calcular P&L no realizado: `(precioActual - precioPromedio) * cantidadActual`
-- [ ] Mostrar en Portfolio y Dashboard
-**Estimación**: 3-4 días
-**Dependencias**: Requiere Portfolio implementado
+- [x] API de CoinGecko para criptomonedas (gratuita, 50 req/min)
+- [x] API de Alpha Vantage para stocks US (gratuita, 5 req/min)
+- [x] Sistema de cache (5 minutos TTL) para evitar rate limits
+- [x] Cálculo de P&L no realizado: `(precioActual - precioPromedio) * cantidadActual`
+- [x] Nuevas columnas en Portfolio: Precio Actual, Valor Actual, P&L No Realizado, P&L %
+- [x] Métricas globales actualizadas: Valor Actual Total, P&L No Realizado Total
+- [x] Detección automática de tipo de activo (crypto/stock-us/argentina)
+- [x] Loading states y manejo de errores
+**Fecha inicio**: 2025-12-17 16:40
+**Fecha fin**: 2025-12-17 17:20
+**Implementación**:
+- Nuevo servicio `priceService.js` (~300 líneas)
+- Funciones: `getCurrentPrice()`, `getMultiplePrices()`, cache management
+- Estados nuevos: `currentPrices`, `pricesLoading`, `pricesError`
+- useEffect actualizado para fetch de precios en paralelo
+- UI del Portfolio con 4 columnas nuevas
+- Métricas del resumen: Total Invertido, Valor Actual, P&L No Realizado
+- Card informativo sobre fuentes de precios y cálculo de P&L
+**Notas**:
+- Alpha Vantage requiere API key (usar 'demo' o registrarse gratis)
+- Mercado argentino pendiente (requiere investigar IOL/PPI APIs)
+- Cache de 5 minutos para optimizar rate limits
 
 ---
 

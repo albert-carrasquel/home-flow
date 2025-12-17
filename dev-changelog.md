@@ -4,6 +4,64 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 
 ---
 
+**[2025-12-17 - 17:20] Feature 3: Integración de Precios en Tiempo Real**
+- **Objetivo**: Mostrar el valor actual de las inversiones y calcular P&L no realizado.
+- **Problema**: Usuario no sabía cuánto valen sus inversiones actualmente, solo el costo histórico.
+- **Solución implementada**:
+  - **Nuevo servicio: `priceService.js`** (~300 líneas):
+    - Función `getCurrentPrice(symbol, currency, tipoActivo)`: Obtiene precio de un activo
+    - Función `getMultiplePrices(positions)`: Fetch paralelo de múltiples precios
+    - Función `detectAssetType()`: Detecta automáticamente si es crypto/stock-us/argentina
+    - Cache con TTL de 5 minutos para evitar rate limits
+    - Integración con CoinGecko API (crypto) y Alpha Vantage API (stocks US)
+    - Mapeo de símbolos comunes: BTC, ETH, USDT, etc.
+  - **Estados nuevos en App.jsx**:
+    - `currentPrices`: Map con precios actuales (key: symbol_currency)
+    - `pricesLoading`: Boolean para loading state
+    - `pricesError`: String con mensaje de error si falla
+  - **useEffect actualizado del Portfolio** (líneas ~567-590):
+    - Después de calcular posiciones, hace fetch de precios con `getMultiplePrices()`
+    - Maneja errores sin bloquear el portfolio (muestra solo costos históricos si falla)
+    - setPricesLoading y setPricesError para feedback visual
+  - **UI del Portfolio actualizada** (líneas ~1427-1547):
+    - **Tabla ampliada**: Agregadas 4 columnas nuevas
+      - Precio Actual: Precio en tiempo real de la API
+      - Valor Actual: Cantidad × Precio Actual
+      - P&L No Realizado: Valor Actual - Monto Invertido
+      - P&L %: (P&L No Realizado / Monto Invertido) × 100
+    - **Cálculo por fila**: 
+      ```javascript
+      const currentPrice = currentPrices.get(`${pos.activo}_${pos.moneda}`);
+      const valorActual = currentPrice * pos.cantidadRestante;
+      const pnlNoRealizado = valorActual - pos.montoInvertido;
+      const pnlNoRealizadoPct = (pnlNoRealizado / pos.montoInvertido) * 100;
+      ```
+    - **Colores dinámicos**: Verde para ganancias, rojo para pérdidas
+    - **Fallback**: Muestra "N/D" o "Cargando..." si no hay precio disponible
+    - **Loading indicator**: Header de tabla muestra "Actualizando precios..." mientras carga
+  - **Métricas del Portfolio actualizadas** (líneas ~1342-1407):
+    - **Total Invertido**: Costo histórico (sin cambios)
+    - **Valor Actual del Portfolio**: Suma de todos los valores actuales
+    - **P&L No Realizado**: Diferencia entre valor actual y costo
+    - Cálculo dinámico con reduce sobre todas las posiciones
+  - **Card informativo actualizado**:
+    - Explica fuentes de precios (CoinGecko, Alpha Vantage)
+    - Muestra fórmula del P&L no realizado
+    - Contador de precios actualizados exitosamente
+- **Beneficios**:
+  - ✅ Visibilidad completa del valor actual del portfolio
+  - ✅ P&L no realizado calculado automáticamente
+  - ✅ APIs gratuitas con rate limits respetados (cache 5 min)
+  - ✅ Sistema extensible para agregar más fuentes (mercado argentino)
+  - ✅ UX clara con loading states y fallbacks
+- **Notas técnicas**:
+  - Alpha Vantage requiere API key gratuita (actualmente usa 'demo')
+  - Mercado argentino (Cedears, Bonos) pendiente de implementar
+  - Cache en memoria (se limpia al refrescar app, considerar localStorage futuro)
+  - Rate limits: CoinGecko 50/min, Alpha Vantage 5/min
+
+---
+
 **[2025-12-17 - 16:30] Feature 2: Portfolio de Posiciones Abiertas**
 - **Objetivo**: Implementar vista completa del portfolio con todas las posiciones abiertas actuales.
 - **Problema**: No había vista de "¿Qué tengo ahora?" - solo transacciones históricas.
