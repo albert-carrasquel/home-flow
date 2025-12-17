@@ -25,11 +25,13 @@ function cleanExpiredCache() {
  * Obtiene precio de cache si está disponible y no expiró
  * @param {string} symbol - Símbolo del activo
  * @param {string} currency - Moneda de cotización (ARS, USD)
+ * @param {string} tipoActivo - Tipo de activo para diferenciar (Cedears vs Acciones)
  * @returns {number|null} - Precio en cache o null
  */
-function getPriceFromCache(symbol, currency) {
+function getPriceFromCache(symbol, currency, tipoActivo = '') {
   cleanExpiredCache();
-  const key = `${symbol}_${currency}`;
+  // IMPORTANTE: Incluir tipoActivo en la key para diferenciar Cedears de Acciones US
+  const key = `${symbol}_${currency}_${tipoActivo}`;
   const cached = priceCache.get(key);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.price;
@@ -41,10 +43,12 @@ function getPriceFromCache(symbol, currency) {
  * Guarda precio en cache
  * @param {string} symbol - Símbolo del activo
  * @param {string} currency - Moneda de cotización
+ * @param {string} tipoActivo - Tipo de activo para diferenciar
  * @param {number} price - Precio a guardar
  */
-function setPriceInCache(symbol, currency, price) {
-  const key = `${symbol}_${currency}`;
+function setPriceInCache(symbol, currency, tipoActivo = '', price) {
+  // IMPORTANTE: Incluir tipoActivo en la key para diferenciar Cedears de Acciones US
+  const key = `${symbol}_${currency}_${tipoActivo}`;
   priceCache.set(key, { price, timestamp: Date.now() });
 }
 
@@ -122,7 +126,7 @@ async function getCryptoPrice(symbol, currency) {
 async function getStockPrice(symbol, currency) {
   try {
     // IMPORTANTE: Reemplazar con tu API key de Alpha Vantage
-    const API_KEY = 'demo'; // Cambiar por tu key real
+    const API_KEY = 'M45V7OEF494I5Z22'; // Cambiar por tu key real
     
     const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${API_KEY}`;
     
@@ -157,41 +161,79 @@ async function getStockPrice(symbol, currency) {
 
 /**
  * Obtiene precio de activo argentino (Cedears, Bonos, Acciones locales)
- * NOTA: Por implementar - requiere investigar APIs disponibles (IOL, Bolsar, etc.)
+ * 
+ * IMPORTANTE sobre CEDEARS:
+ * - Un Cedear NO es lo mismo que la acción US original
+ * - Ej: Cedear de AAPL ≠ Acción de AAPL en NASDAQ
+ * - Cedears tienen ratio de conversión (ej: 1 Cedear = 0.1 acción US)
+ * - Cotizan en ARS con precio diferente al US
+ * - Tienen spread, comisiones y arbitraje local
+ * 
+ * APIs disponibles para implementar:
+ * 1. IOL API (Invertir Online) - requiere cuenta
+ * 2. PPI API - requiere cuenta  
+ * 3. Bolsar.com - scraping (no recomendado)
+ * 4. Portfolio Personal - API privada
+ * 
  * @param {string} symbol - Símbolo del activo
  * @param {string} currency - Moneda (ARS principalmente)
  * @returns {Promise<number|null>} - Precio actual o null si falla
  */
 async function getArgentinaAssetPrice(symbol, currency) {
   // TODO: Implementar integración con API de mercado argentino
-  // Opciones:
-  // 1. IOL API (requiere cuenta)
-  // 2. Scraping de bolsar.com (no recomendado)
-  // 3. API de PPI (requiere cuenta)
-  console.warn(`Argentina asset price not implemented yet for ${symbol}`);
+  console.warn(`[PriceService] Precio de mercado argentino no implementado para ${symbol}`);
+  console.info(`[PriceService] Para obtener precios de Cedears/Acciones argentinas, se necesita integrar con IOL o PPI API`);
   return null;
 }
 
 /**
  * Detecta el tipo de activo basado en el símbolo y tipo
+ * IMPORTANTE: Esta función es crítica para evitar confundir Cedears con Acciones US
  * @param {string} symbol - Símbolo del activo
  * @param {string} tipoActivo - Tipo: Cripto, Acciones, Cedears, etc.
  * @returns {string} - Tipo detectado: 'crypto', 'stock-us', 'argentina', 'unknown'
  */
 function detectAssetType(symbol, tipoActivo) {
-  if (tipoActivo === 'Cripto' || COINGECKO_SYMBOL_MAP[symbol.toUpperCase()]) {
+  // REGLA 1: Criptomonedas - siempre tienen prioridad si están en el mapa
+  if (tipoActivo === 'Cripto' || tipoActivo === 'Criptomoneda' || COINGECKO_SYMBOL_MAP[symbol.toUpperCase()]) {
     return 'crypto';
   }
   
-  if (tipoActivo === 'Cedears' || tipoActivo === 'Bono' || tipoActivo === 'Lecap' || tipoActivo === 'Letra') {
+  // REGLA 2: Cedears SIEMPRE son mercado argentino (nunca stocks US)
+  // Los Cedears son certificados argentinos que representan acciones extranjeras
+  // Ej: Cedear de AAPL ≠ Acción de AAPL en NASDAQ
+  if (tipoActivo === 'Cedears') {
+    console.log(`[PriceService] ${symbol} detectado como Cedear → mercado argentino`);
     return 'argentina';
   }
   
+  // REGLA 3: Instrumentos argentinos explícitos
+  if (tipoActivo === 'Bono' || tipoActivo === 'Lecap' || tipoActivo === 'Letra') {
+    return 'argentina';
+  }
+  
+  // REGLA 4: Tipo "Acciones" - puede ser US o Argentina
   if (tipoActivo === 'Acciones') {
-    // Heurística: Si tiene punto (AAPL.BA) o es conocido argentino, es argentina
-    if (symbol.includes('.BA') || symbol.includes('.') || symbol.match(/^[A-Z]{4}$/)) {
+    // 4.1: Si tiene sufijo .BA (Buenos Aires), es Argentina
+    if (symbol.includes('.BA')) {
       return 'argentina';
     }
+    
+    // 4.2: Acciones argentinas conocidas (BYMA/Merval)
+    const accionesArgentinas = [
+      'YPFD', 'GGAL', 'PAMP', 'ALUA', 'COME', 'TRAN', 'EDN', 'LOMA',
+      'TGSU2', 'TXAR', 'VALO', 'BBAR', 'BMA', 'SUPV', 'CRES', 'CEPU',
+      'AGRO', 'BYMA', 'MIRG', 'TGNO4', 'CGPA2', 'BOLT', 'MOLI', 'DYCA'
+    ];
+    
+    if (accionesArgentinas.includes(symbol.toUpperCase())) {
+      return 'argentina';
+    }
+    
+    // 4.3: Heurística: 4 letras mayúsculas suele ser Argentina (ej: GGAL, YPFD)
+    // Pero AAPL, MSFT también son 4 letras... así que NO es confiable
+    // Por defecto, asumimos que "Acciones" sin más contexto son US
+    console.log(`[PriceService] ${symbol} tipo "Acciones" → asumiendo stock US (usa "Cedears" si es argentino)`);
     return 'stock-us';
   }
   
@@ -206,9 +248,10 @@ function detectAssetType(symbol, tipoActivo) {
  * @returns {Promise<number|null>} - Precio actual o null si no se puede obtener
  */
 export async function getCurrentPrice(symbol, currency, tipoActivo) {
-  // Verificar cache primero
-  const cachedPrice = getPriceFromCache(symbol, currency);
+  // Verificar cache primero (incluye tipoActivo para diferenciar Cedears)
+  const cachedPrice = getPriceFromCache(symbol, currency, tipoActivo);
   if (cachedPrice !== null) {
+    console.log(`[PriceService] Cache hit: ${symbol} (${tipoActivo})`);
     return cachedPrice;
   }
 
@@ -230,18 +273,19 @@ export async function getCurrentPrice(symbol, currency, tipoActivo) {
         break;
       
       default:
-        console.warn(`Unknown asset type for ${symbol}`);
+        console.warn(`[PriceService] Unknown asset type for ${symbol} (${tipoActivo})`);
         return null;
     }
 
     // Si obtuvimos precio, guardarlo en cache
     if (price !== null) {
-      setPriceInCache(symbol, currency, price);
+      setPriceInCache(symbol, currency, tipoActivo, price);
+      console.log(`[PriceService] Precio obtenido: ${symbol} (${tipoActivo}) = ${price} ${currency}`);
     }
 
     return price;
   } catch (error) {
-    console.error(`Error getting price for ${symbol}:`, error);
+    console.error(`[PriceService] Error getting price for ${symbol} (${tipoActivo}):`, error);
     return null;
   }
 }

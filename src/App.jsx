@@ -1601,20 +1601,50 @@ const App = () => {
 
             {/* Info Card */}
             <div className="hf-card" style={{marginTop: 'var(--hf-space-lg)', background: 'rgba(100, 200, 255, 0.05)', borderColor: 'rgba(100, 200, 255, 0.2)'}}>
-              <h4 className="font-semibold mb-2" style={{color: 'var(--hf-accent-blue)'}}>ℹ️ Información sobre Precios</h4>
-              <p className="text-sm" style={{color: 'var(--hf-text-secondary)', lineHeight: '1.6', marginBottom: '0.5rem'}}>
+              <h4 className="font-semibold mb-2" style={{color: 'var(--hf-accent-blue)'}}>ℹ️ Información sobre Precios en Tiempo Real</h4>
+              
+              <p className="text-sm" style={{color: 'var(--hf-text-secondary)', lineHeight: '1.6', marginBottom: '0.75rem'}}>
                 Este portfolio muestra todas tus posiciones abiertas actualmente (inversiones que aún no has vendido completamente). 
                 Los cálculos utilizan el método FIFO (First In, First Out) para determinar qué cantidad de cada activo permanece sin vender.
               </p>
+              
+              <div style={{marginBottom: '0.75rem'}}>
+                <p className="text-sm" style={{color: 'var(--hf-text-secondary)', lineHeight: '1.6', marginBottom: '0.25rem'}}>
+                  <strong style={{color: 'var(--hf-accent-blue)'}}>Fuentes de precios:</strong>
+                </p>
+                <ul style={{paddingLeft: '1.25rem', marginTop: '0.25rem'}}>
+                  <li className="text-sm" style={{color: 'var(--hf-text-secondary)', lineHeight: '1.6'}}>
+                    ✅ <strong>Criptomonedas</strong>: CoinGecko API (BTC, ETH, USDT, etc.)
+                  </li>
+                  <li className="text-sm" style={{color: 'var(--hf-text-secondary)', lineHeight: '1.6'}}>
+                    ✅ <strong>Acciones US</strong>: Alpha Vantage API (AAPL, GOOGL, MSFT, etc.)
+                  </li>
+                  <li className="text-sm" style={{color: 'var(--hf-warning)', lineHeight: '1.6'}}>
+                    ⏳ <strong>Cedears y Acciones Argentinas</strong>: Pendiente de implementar (requiere IOL o PPI API)
+                  </li>
+                </ul>
+              </div>
+              
+              <div style={{background: 'rgba(255, 200, 100, 0.1)', border: '1px solid rgba(255, 200, 100, 0.3)', padding: '0.75rem', borderRadius: '8px', marginBottom: '0.75rem'}}>
+                <p className="text-sm" style={{color: 'var(--hf-warning)', lineHeight: '1.6', marginBottom: '0.25rem'}}>
+                  <strong>⚠️ Importante sobre Cedears:</strong>
+                </p>
+                <p className="text-sm" style={{color: 'var(--hf-text-secondary)', lineHeight: '1.6'}}>
+                  Un <strong>Cedear NO es lo mismo</strong> que la acción US original. Los Cedears tienen ratio de conversión 
+                  (ej: 1 Cedear = 0.1 acción US), cotizan en ARS con precio diferente, y tienen spread y comisiones locales. 
+                  <strong style={{color: 'var(--hf-accent-blue)'}}> Por eso se clasifican por separado</strong> y requieren API del mercado argentino.
+                </p>
+              </div>
+              
               <p className="text-sm" style={{color: 'var(--hf-text-secondary)', lineHeight: '1.6'}}>
-                <strong style={{color: 'var(--hf-accent-blue)'}}>Precios en tiempo real:</strong> Se obtienen automáticamente desde APIs públicas 
-                (CoinGecko para criptomonedas, Alpha Vantage para acciones US). El P&L no realizado se calcula como: 
+                <strong style={{color: 'var(--hf-accent-blue)'}}>Cálculo del P&L no realizado:</strong>
                 <code style={{background: 'rgba(255,255,255,0.1)', padding: '0.125rem 0.25rem', borderRadius: '4px', marginLeft: '0.25rem'}}>
                   (Precio Actual - Precio Promedio Compra) × Cantidad Actual
                 </code>
               </p>
+              
               {currentPrices.size > 0 && (
-                <p className="text-sm" style={{color: 'var(--hf-success)', marginTop: '0.5rem'}}>
+                <p className="text-sm" style={{color: 'var(--hf-success)', marginTop: '0.75rem'}}>
                   ✅ {currentPrices.size} {currentPrices.size === 1 ? 'precio actualizado' : 'precios actualizados'} (cache de 5 minutos)
                 </p>
               )}

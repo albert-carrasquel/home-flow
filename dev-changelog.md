@@ -4,6 +4,41 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 
 ---
 
+**[2025-12-17 - 17:40] Fix crítico: Diferenciación entre Cedears y Acciones US**
+- **Problema detectado**: 
+  - Sistema no diferenciaba Cedears de Acciones US
+  - Cedear de AAPL se confundía con Acción de AAPL en NASDAQ
+  - Cache compartido entre tipos de activo diferentes
+- **Impacto**: Precios incorrectos o "N/D" en activos argentinos
+- **Solución implementada**:
+  - **priceService.js actualizado**:
+    - `detectAssetType()` mejorado con reglas explícitas:
+      * REGLA 1: Criptos tienen prioridad (incluyendo "Criptomoneda" además de "Cripto")
+      * REGLA 2: Cedears SIEMPRE son mercado argentino (nunca stock-us)
+      * REGLA 3: Bonos, Lecap, Letra → argentina
+      * REGLA 4: Acciones con análisis detallado (.BA, lista de acciones argentinas)
+    - Cache mejorado: Incluye `tipoActivo` en la key
+      * Formato: `${symbol}_${currency}_${tipoActivo}`
+      * Permite diferenciar: "AAPL_ARS_Cedears" vs "AAPL_USD_Acciones"
+    - `getPriceFromCache()` y `setPriceInCache()` actualizados con parámetro `tipoActivo`
+    - Logs mejorados: `console.log` indica tipo detectado y caches
+    - Lista de acciones argentinas agregada (24 símbolos: YPFD, GGAL, PAMP, etc.)
+    - Documentación extendida sobre Cedears en `getArgentinaAssetPrice()`
+  - **App.jsx actualizado**:
+    - Card informativo mejorado con 3 secciones:
+      1. Fuentes de precios (con checkmarks y status)
+      2. Warning sobre Cedears (fondo amarillo claro)
+      3. Fórmula de cálculo y contador de precios
+    - Explicación clara: Cedear ≠ Acción US
+    - Detalle: Ratio de conversión, spread, comisiones locales
+- **Notas técnicas**:
+  - Cedears y Acciones argentinas mostrarán "N/D" hasta implementar IOL/PPI API
+  - Sistema ahora diferencia correctamente tipos para futuras integraciones
+  - Cache por tipo previene confusiones de precios
+  - Logs en consola ayudan a debuggear detección de tipos
+
+---
+
 **[2025-12-17 - 17:20] Feature 3: Integración de Precios en Tiempo Real**
 - **Objetivo**: Mostrar el valor actual de las inversiones y calcular P&L no realizado.
 - **Problema**: Usuario no sabía cuánto valen sus inversiones actualmente, solo el costo histórico.
