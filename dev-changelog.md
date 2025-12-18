@@ -4,6 +4,47 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 
 ---
 
+**[2025-12-18 - 10:30] Feature: Integración API Rava Bursátil para mercado argentino**
+- **Objetivo**: Obtener precios en tiempo real de Cedears y Acciones argentinas
+- **API implementada**: Rava Bursátil (https://www.rava.com/)
+  - **Endpoint**: `https://api.rava.com.ar/cotizaciones/{ticker}`
+  - **Ventajas**:
+    - ✅ API pública, no requiere autenticación
+    - ✅ Cobertura completa: Cedears, Acciones, Bonos, Letras, FCI
+    - ✅ Datos actualizados en tiempo real
+    - ✅ Sin rate limits restrictivos
+  - **Alternativas evaluadas**:
+    - IOL API: Requiere cuenta + activación + tokens (15 min TTL)
+    - PPI API: Requiere cuenta + autenticación
+    - Rava: ✅ Elegida por simplicidad y acceso público
+- **Implementación en `priceService.js`**:
+  - Actualizada función `getArgentinaAssetPrice(symbol, currency)`
+  - **Lógica de precios** (en orden de prioridad):
+    1. `ultimoPrecio` → Último precio operado (preferido)
+    2. `ultimoCierre` → Precio de cierre anterior (si no operó hoy)
+    3. `(puntaCompradora + puntaVendedora) / 2` → Promedio de puntas (último recurso)
+  - **Manejo de errores**:
+    - Response 404/500 → return null
+    - Datos inválidos → return null
+    - Logs detallados en consola con prefijo `[PriceService]`
+- **Activos que ahora funcionarán**:
+  | Activo | Tipo | Moneda | API | Antes | Ahora |
+  |--------|------|--------|-----|-------|-------|
+  | NVDA | Cedears | ARS | Rava | ❌ N/D | ✅ Precio |
+  | INTC | Cedears | ARS | Rava | ❌ N/D | ✅ Precio |
+  | APPL | Acciones | ARS | Rava | ❌ N/D | ✅ Precio |
+  | BITF | Acciones | ARS | Rava | ❌ N/D | ✅ Precio |
+  | GGAL | Acciones | ARS | Rava | ❌ N/D | ✅ Precio |
+- **Testing pendiente**:
+  - Usuario debe verificar precios de Cedears en el Portfolio
+  - Verificar logs en consola: `[PriceService] ✅ Rava: NVDA = XXXXX.XX ARS`
+  - Confirmar que P&L se calcula correctamente con precios argentinos
+- **Próximos pasos**:
+  - Debuggear Alpha Vantage para Acciones US (AAPL, AMD, BITF en USD)
+  - Considerar agregar IOL como API secundaria (respaldo)
+
+---
+
 **[2025-12-18 - 09:00] Fix crítico: Detección por MONEDA para Acciones US vs Argentinas**
 - **Problema detectado por usuario**:
   - AMD (Acciones, USD) → No aparecía precio (debería usar Alpha Vantage)

@@ -168,6 +168,7 @@ async function getStockPrice(symbol, currency) {
 
 /**
  * Obtiene precio de activo argentino (Cedears, Bonos, Acciones locales)
+ * Utiliza la API pública de Rava Bursátil
  * 
  * IMPORTANTE sobre CEDEARS:
  * - Un Cedear NO es lo mismo que la acción US original
@@ -176,21 +177,71 @@ async function getStockPrice(symbol, currency) {
  * - Cotizan en ARS con precio diferente al US
  * - Tienen spread, comisiones y arbitraje local
  * 
- * APIs disponibles para implementar:
- * 1. IOL API (Invertir Online) - requiere cuenta
- * 2. PPI API - requiere cuenta  
- * 3. Bolsar.com - scraping (no recomendado)
- * 4. Portfolio Personal - API privada
+ * API utilizada: Rava Bursátil (https://www.rava.com/)
+ * - Endpoint: https://api.rava.com.ar/cotizaciones/{ticker}
+ * - No requiere autenticación
+ * - Cubre: Cedears, Acciones argentinas, Bonos, etc.
  * 
- * @param {string} symbol - Símbolo del activo
+ * @param {string} symbol - Símbolo del activo (ej: AAPL, GGAL, AL30)
  * @param {string} currency - Moneda (ARS principalmente)
  * @returns {Promise<number|null>} - Precio actual o null si falla
  */
 async function getArgentinaAssetPrice(symbol, currency) {
-  // TODO: Implementar integración con API de mercado argentino
-  console.warn(`[PriceService] Precio de mercado argentino no implementado para ${symbol}`);
-  console.info(`[PriceService] Para obtener precios de Cedears/Acciones argentinas, se necesita integrar con IOL o PPI API`);
-  return null;
+  try {
+    console.log(`[PriceService] Obteniendo precio de Rava para ${symbol} (${currency})`);
+    
+    // Rava API endpoint
+    const url = `https://api.rava.com.ar/cotizaciones/${symbol.toUpperCase()}`;
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      console.error(`[PriceService] Rava API error: ${response.status} para ${symbol}`);
+      return null;
+    }
+    
+    const data = await response.json();
+    
+    // Verificar si hay datos
+    if (!data || typeof data !== 'object') {
+      console.warn(`[PriceService] Rava: respuesta inválida para ${symbol}`);
+      return null;
+    }
+    
+    // Rava devuelve múltiples precios, priorizamos:
+    // 1. ultimoPrecio (último precio operado)
+    // 2. ultimoCierre (cierre anterior si no operó hoy)
+    // 3. puntaCompradora/puntaVendedora (promedio de puntas)
+    
+    let price = null;
+    
+    if (data.ultimoPrecio && data.ultimoPrecio > 0) {
+      price = parseFloat(data.ultimoPrecio);
+    } else if (data.ultimoCierre && data.ultimoCierre > 0) {
+      price = parseFloat(data.ultimoCierre);
+      console.log(`[PriceService] Rava: usando precio de cierre para ${symbol}`);
+    } else if (data.puntaCompradora && data.puntaVendedora) {
+      // Promedio de puntas como último recurso
+      const bid = parseFloat(data.puntaCompradora);
+      const ask = parseFloat(data.puntaVendedora);
+      if (bid > 0 && ask > 0) {
+        price = (bid + ask) / 2;
+        console.log(`[PriceService] Rava: usando promedio de puntas para ${symbol}`);
+      }
+    }
+    
+    if (price && !isNaN(price) && price > 0) {
+      console.log(`[PriceService] ✅ Rava: ${symbol} = ${price.toFixed(2)} ARS`);
+      return price;
+    }
+    
+    console.warn(`[PriceService] Rava: no se encontró precio válido para ${symbol}`, data);
+    return null;
+    
+  } catch (error) {
+    console.error(`[PriceService] Error obteniendo precio de Rava para ${symbol}:`, error.message);
+    return null;
+  }
 }
 
 /**
