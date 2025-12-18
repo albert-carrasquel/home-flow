@@ -4,6 +4,52 @@ Este archivo registra todos los cambios realizados en la etapa de desarrollo ini
 
 ---
 
+**[2025-12-18 - 15:00] Fix DEFINITIVO: Yahoo Finance API sin CORS**
+- **Problema detectado**: 
+  - CORS bloqueaba Rava API y Alpha Vantage
+  - Proxy CORS (corsproxy.io) también falló
+  - App rota: TODOS los precios mostraban N/D
+- **Causa raíz**: Navegadores bloquean APIs sin headers CORS correctos
+- **Solución implementada**: **Yahoo Finance v8 API**
+  - **Endpoint**: `https://query1.finance.yahoo.com/v8/finance/chart/{symbol}`
+  - **Ventajas**:
+    - ✅ Sin autenticación
+    - ✅ Sin restricciones CORS
+    - ✅ Cobertura global: US + Argentina
+    - ✅ Datos en tiempo real
+    - ✅ Sin rate limits agresivos
+- **Implementación**:
+  - **Acciones US**: `getStockPrice()` → Yahoo Finance directo (AAPL, AMD, BITF)
+  - **Acciones ARG/Cedears**: `getArgentinaAssetPrice()` → Yahoo con sufijo .BA (GGAL.BA, NVDA.BA)
+  - **Formato Yahoo ARG**: Ticker + `.BA` (Buenos Aires Stock Exchange)
+  - **Response**: `chart.result[0].meta.regularMarketPrice`
+- **Activos que funcionarán**:
+  | Activo | Tipo | Yahoo Symbol | API Endpoint |
+  |--------|------|--------------|--------------|
+  | AAPL (USD) | Acciones | AAPL | query1.finance.yahoo.com/.../AAPL |
+  | AMD (USD) | Acciones | AMD | query1.finance.yahoo.com/.../AMD |
+  | BITF (USD) | Acciones | BITF | query1.finance.yahoo.com/.../BITF |
+  | NVDA (ARS) | Cedears | NVDA.BA | query1.finance.yahoo.com/.../NVDA.BA |
+  | INTC (ARS) | Cedears | INTC.BA | query1.finance.yahoo.com/.../INTC.BA |
+  | GGAL (ARS) | Acciones | GGAL.BA | query1.finance.yahoo.com/.../GGAL.BA |
+  | YPF (ARS) | Cedears | YPF.BA | query1.finance.yahoo.com/.../YPF.BA |
+  | BTC, ETH | Crypto | BTC, ETH | CoinGecko (ya funciona) |
+- **Logs mejorados**:
+  - `📡 Yahoo Finance: consultando AAPL (USD)`
+  - `✅ Yahoo Finance: AAPL = 271.84 USD`
+  - `📡 Yahoo Finance ARG: consultando NVDA → NVDA.BA (ARS)`
+  - `✅ Yahoo Finance ARG: NVDA (NVDA.BA) = 12345.00 ARS`
+- **Testing esperado**:
+  - Recargar app y verificar que TODOS los activos muestran precio
+  - Consola debe mostrar requests exitosos
+  - P&L debe calcularse correctamente
+- **Commits revertidos**:
+  - f6c923c: Proxy CORS (falló)
+  - 0e12ba5: Logs y variantes Rava (CORS bloqueado)
+  - f8bbf65: Rava API inicial (CORS bloqueado)
+
+---
+
 **[2025-12-18 - 09:00] Fix crítico: Detección por MONEDA para Acciones US vs Argentinas**
 - **Problema detectado por usuario**:
   - AMD (Acciones, USD) → No aparecía precio (debería usar Alpha Vantage)

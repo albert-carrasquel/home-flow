@@ -117,8 +117,8 @@ async function getCryptoPrice(symbol, currency) {
 }
 
 /**
- * Obtiene precio de acción US desde Alpha Vantage API (gratuita - 5 req/min)
- * NOTA: Requiere API key gratuita de https://www.alphavantage.co/support/#api-key
+ * Obtiene precio de acción US usando Yahoo Finance API (sin CORS, pública)
+ * API: https://query1.finance.yahoo.com/v8/finance/chart/{symbol}
  * IMPORTANTE: Esta función solo se llama para acciones en USD (mercado US)
  * @param {string} symbol - Símbolo de la acción (AAPL, GOOGL, etc.)
  * @param {string} currency - Moneda (siempre USD para stocks US)
@@ -126,48 +126,45 @@ async function getCryptoPrice(symbol, currency) {
  */
 async function getStockPrice(symbol, currency) {
   try {
-    // IMPORTANTE: Reemplazar con tu API key de Alpha Vantage
-    const API_KEY = 'M45V7OEF494I5Z22'; // Cambiar por tu key real
+    // Yahoo Finance v8 API - sin autenticación, sin CORS
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
     
-    const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${API_KEY}`;
+    console.log(`[PriceService] 📡 Yahoo Finance: consultando ${symbol} (${currency})`);
     
     const response = await fetch(url);
     if (!response.ok) {
-      console.error(`[PriceService] Alpha Vantage API error: ${response.status}`);
+      console.error(`[PriceService] ❌ Yahoo Finance API error: ${response.status}`);
       return null;
     }
 
     const data = await response.json();
     
-    // Verificar si hay error de rate limit o API
-    if (data['Note']) {
-      console.warn(`[PriceService] Alpha Vantage rate limit: ${data['Note']}`);
+    // Verificar si hay error
+    if (data.chart?.error) {
+      console.error(`[PriceService] ❌ Yahoo Finance error:`, data.chart.error.description);
       return null;
     }
     
-    if (data['Error Message']) {
-      console.error(`[PriceService] Alpha Vantage error: ${data['Error Message']}`);
-      return null;
-    }
+    // Yahoo devuelve el precio actual en chart.result[0].meta.regularMarketPrice
+    const result = data.chart?.result?.[0];
+    const price = result?.meta?.regularMarketPrice;
     
-    // Alpha Vantage devuelve el precio en "Global Quote" > "05. price"
-    const price = parseFloat(data['Global Quote']?.['05. price']);
-    
-    if (!isNaN(price) && price > 0) {
-      console.log(`[PriceService] Alpha Vantage: ${symbol} = ${price} USD`);
+    if (price && !isNaN(price) && price > 0) {
+      console.log(`[PriceService] ✅ Yahoo Finance: ${symbol} = ${price.toFixed(2)} USD`);
       return price;
     }
     
-    console.warn(`[PriceService] Alpha Vantage: No se encontró precio para ${symbol}`);
+    console.warn(`[PriceService] ⚠️ Yahoo Finance: No se encontró precio para ${symbol}`);
     return null;
   } catch (error) {
-    console.error('[PriceService] Error fetching stock price from Alpha Vantage:', error);
+    console.error(`[PriceService] ❌ Error fetching stock price from Yahoo Finance (${symbol}):`, error.message);
     return null;
   }
 }
 
 /**
  * Obtiene precio de activo argentino (Cedears, Bonos, Acciones locales)
+ * Usa Yahoo Finance con sufijo .BA (Buenos Aires Stock Exchange)
  * 
  * IMPORTANTE sobre CEDEARS:
  * - Un Cedear NO es lo mismo que la acción US original
@@ -176,21 +173,50 @@ async function getStockPrice(symbol, currency) {
  * - Cotizan en ARS con precio diferente al US
  * - Tienen spread, comisiones y arbitraje local
  * 
- * APIs disponibles para implementar:
- * 1. IOL API (Invertir Online) - requiere cuenta
- * 2. PPI API - requiere cuenta  
- * 3. Bolsar.com - scraping (no recomendado)
- * 4. Portfolio Personal - API privada
+ * En Yahoo Finance:
+ * - Acciones argentinas: GGAL.BA, YPF.BA
+ * - Cedears: AAPL.BA (es el Cedear), KO.BA, etc.
  * 
  * @param {string} symbol - Símbolo del activo
  * @param {string} currency - Moneda (ARS principalmente)
  * @returns {Promise<number|null>} - Precio actual o null si falla
  */
 async function getArgentinaAssetPrice(symbol, currency) {
-  // TODO: Implementar integración con API de mercado argentino
-  console.warn(`[PriceService] Precio de mercado argentino no implementado para ${symbol}`);
-  console.info(`[PriceService] Para obtener precios de Cedears/Acciones argentinas, se necesita integrar con IOL o PPI API`);
-  return null;
+  try {
+    // En Yahoo Finance, los activos argentinos usan sufijo .BA
+    const ticker = symbol.includes('.BA') ? symbol : `${symbol}.BA`;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+    
+    console.log(`[PriceService] 📡 Yahoo Finance ARG: consultando ${symbol} → ${ticker} (${currency})`);
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      console.error(`[PriceService] ❌ Yahoo Finance ARG error: ${response.status} para ${ticker}`);
+      return null;
+    }
+
+    const data = await response.json();
+    
+    // Verificar si hay error
+    if (data.chart?.error) {
+      console.error(`[PriceService] ❌ Yahoo Finance ARG error:`, data.chart.error.description);
+      return null;
+    }
+    
+    const result = data.chart?.result?.[0];
+    const price = result?.meta?.regularMarketPrice;
+    
+    if (price && !isNaN(price) && price > 0) {
+      console.log(`[PriceService] ✅ Yahoo Finance ARG: ${symbol} (${ticker}) = ${price.toFixed(2)} ARS`);
+      return price;
+    }
+    
+    console.warn(`[PriceService] ⚠️ Yahoo Finance ARG: No se encontró precio para ${ticker}`);
+    return null;
+  } catch (error) {
+    console.error(`[PriceService] ❌ Error obteniendo precio argentino (${symbol}):`, error.message);
+    return null;
+  }
 }
 
 /**
