@@ -130,14 +130,16 @@ async function getStockPrice(symbol, currency) {
     const API_KEY = 'M45V7OEF494I5Z22'; // Cambiar por tu key real
     
     const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${API_KEY}`;
+    console.log(`[PriceService] 📡 Alpha Vantage request: ${symbol} (${currency}) - URL: ${url}`);
     
     const response = await fetch(url);
     if (!response.ok) {
-      console.error(`[PriceService] Alpha Vantage API error: ${response.status}`);
+      console.error(`[PriceService] ❌ Alpha Vantage API error: ${response.status}`);
       return null;
     }
 
     const data = await response.json();
+    console.log(`[PriceService] Alpha Vantage response for ${symbol}:`, JSON.stringify(data, null, 2));
     
     // Verificar si hay error de rate limit o API
     if (data['Note']) {
@@ -151,14 +153,20 @@ async function getStockPrice(symbol, currency) {
     }
     
     // Alpha Vantage devuelve el precio en "Global Quote" > "05. price"
-    const price = parseFloat(data['Global Quote']?.['05. price']);
-    
+    const globalQuote = data['Global Quote'];
+    if (!globalQuote || Object.keys(globalQuote).length === 0) {
+      console.warn(`[PriceService] ⚠️ Alpha Vantage: Global Quote vacío para ${symbol}`);
+      return null;
+    }
+
+    const price = parseFloat(globalQuote['05. price']);
+
     if (!isNaN(price) && price > 0) {
-      console.log(`[PriceService] Alpha Vantage: ${symbol} = ${price} USD`);
+      console.log(`[PriceService] ✅ Alpha Vantage: ${symbol} = ${price} USD`);
       return price;
     }
-    
-    console.warn(`[PriceService] Alpha Vantage: No se encontró precio para ${symbol}`);
+
+    console.warn(`[PriceService] ⚠️ Alpha Vantage: Precio inválido para ${symbol} (${price})`);
     return null;
   } catch (error) {
     console.error('[PriceService] Error fetching stock price from Alpha Vantage:', error);
@@ -182,66 +190,81 @@ async function getStockPrice(symbol, currency) {
  * - No requiere autenticación
  * - Cubre: Cedears, Acciones argentinas, Bonos, etc.
  * 
+ * NOTA: Los Cedears pueden tener sufijos en Rava (ej: AAPL.D, NVDA.D)
+ * Intentamos múltiples variantes hasta encontrar el precio
+ * 
  * @param {string} symbol - Símbolo del activo (ej: AAPL, GGAL, AL30)
  * @param {string} currency - Moneda (ARS principalmente)
  * @returns {Promise<number|null>} - Precio actual o null si falla
  */
 async function getArgentinaAssetPrice(symbol, currency) {
-  try {
-    console.log(`[PriceService] Obteniendo precio de Rava para ${symbol} (${currency})`);
-    
-    // Rava API endpoint
-    const url = `https://api.rava.com.ar/cotizaciones/${symbol.toUpperCase()}`;
-    
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      console.error(`[PriceService] Rava API error: ${response.status} para ${symbol}`);
-      return null;
-    }
-    
-    const data = await response.json();
-    
-    // Verificar si hay datos
-    if (!data || typeof data !== 'object') {
-      console.warn(`[PriceService] Rava: respuesta inválida para ${symbol}`);
-      return null;
-    }
-    
-    // Rava devuelve múltiples precios, priorizamos:
-    // 1. ultimoPrecio (último precio operado)
-    // 2. ultimoCierre (cierre anterior si no operó hoy)
-    // 3. puntaCompradora/puntaVendedora (promedio de puntas)
-    
-    let price = null;
-    
-    if (data.ultimoPrecio && data.ultimoPrecio > 0) {
-      price = parseFloat(data.ultimoPrecio);
-    } else if (data.ultimoCierre && data.ultimoCierre > 0) {
-      price = parseFloat(data.ultimoCierre);
-      console.log(`[PriceService] Rava: usando precio de cierre para ${symbol}`);
-    } else if (data.puntaCompradora && data.puntaVendedora) {
-      // Promedio de puntas como último recurso
-      const bid = parseFloat(data.puntaCompradora);
-      const ask = parseFloat(data.puntaVendedora);
-      if (bid > 0 && ask > 0) {
-        price = (bid + ask) / 2;
-        console.log(`[PriceService] Rava: usando promedio de puntas para ${symbol}`);
+  // Para Cedears, intentar con sufijo .D (Dolares) que usa Rava
+  const variants = [
+    symbol.toUpperCase(),           // AAPL
+    `${symbol.toUpperCase()}.D`,    // AAPL.D (Cedears en Rava)
+    `${symbol.toUpperCase()}D`,     // AAPLD (algunas plataformas)
+    `${symbol.toUpperCase()}.BA`    // AAPL.BA (Buenos Aires)
+  ];
+  
+  for (const ticker of variants) {
+    try {
+      const url = `https://api.rava.com.ar/cotizaciones/${ticker}`;
+      console.log(`[PriceService] 📡 Rava request: ${symbol} → probando ${ticker} - URL: ${url}`);
+      
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        console.log(`[PriceService] Rava: ${ticker} no encontrado (${response.status}), probando siguiente variante...`);
+        continue; // Probar siguiente variante
       }
+      
+      const data = await response.json();
+      console.log(`[PriceService] Rava response for ${ticker}:`, JSON.stringify(data, null, 2));
+      
+      // Verificar si hay datos
+      if (!data || typeof data !== 'object') {
+        console.log(`[PriceService] Rava: ${ticker} respuesta inválida, probando siguiente...`);
+        continue;
+      }
+      
+      // Rava devuelve múltiples precios, priorizamos:
+      // 1. ultimoPrecio (último precio operado)
+      // 2. ultimoCierre (cierre anterior si no operó hoy)
+      // 3. puntaCompradora/puntaVendedora (promedio de puntas)
+      
+      let price = null;
+      
+      if (data.ultimoPrecio && data.ultimoPrecio > 0) {
+        price = parseFloat(data.ultimoPrecio);
+      } else if (data.ultimoCierre && data.ultimoCierre > 0) {
+        price = parseFloat(data.ultimoCierre);
+        console.log(`[PriceService] Rava: usando precio de cierre para ${ticker}`);
+      } else if (data.puntaCompradora && data.puntaVendedora) {
+        // Promedio de puntas como último recurso
+        const bid = parseFloat(data.puntaCompradora);
+        const ask = parseFloat(data.puntaVendedora);
+        if (bid > 0 && ask > 0) {
+          price = (bid + ask) / 2;
+          console.log(`[PriceService] Rava: usando promedio de puntas para ${ticker}`);
+        }
+      }
+      
+      if (price && !isNaN(price) && price > 0) {
+        console.log(`[PriceService] ✅ Rava: ${symbol} (${ticker}) = ${price.toFixed(2)} ARS`);
+        return price;
+      }
+      
+      console.log(`[PriceService] Rava: ${ticker} sin precio válido, probando siguiente...`);
+      
+    } catch (error) {
+      console.log(`[PriceService] Error con ${ticker}:`, error.message, '- probando siguiente...');
+      continue;
     }
-    
-    if (price && !isNaN(price) && price > 0) {
-      console.log(`[PriceService] ✅ Rava: ${symbol} = ${price.toFixed(2)} ARS`);
-      return price;
-    }
-    
-    console.warn(`[PriceService] Rava: no se encontró precio válido para ${symbol}`, data);
-    return null;
-    
-  } catch (error) {
-    console.error(`[PriceService] Error obteniendo precio de Rava para ${symbol}:`, error.message);
-    return null;
   }
+  
+  // Si ninguna variante funcionó
+  console.warn(`[PriceService] ❌ Rava: no se encontró precio para ${symbol} después de probar ${variants.length} variantes:`, variants);
+  return null;
 }
 
 /**
