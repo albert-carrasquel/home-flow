@@ -120,9 +120,6 @@ async function getCryptoPrice(symbol, currency) {
  * Obtiene precio de acción US desde Alpha Vantage API (gratuita - 5 req/min)
  * NOTA: Requiere API key gratuita de https://www.alphavantage.co/support/#api-key
  * IMPORTANTE: Esta función solo se llama para acciones en USD (mercado US)
- * 
- * Se usa proxy CORS para evitar bloqueos del navegador
- * 
  * @param {string} symbol - Símbolo de la acción (AAPL, GOOGL, etc.)
  * @param {string} currency - Moneda (siempre USD para stocks US)
  * @returns {Promise<number|null>} - Precio actual o null si falla
@@ -132,23 +129,15 @@ async function getStockPrice(symbol, currency) {
     // IMPORTANTE: Reemplazar con tu API key de Alpha Vantage
     const API_KEY = 'M45V7OEF494I5Z22'; // Cambiar por tu key real
     
-    const alphaUrl = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${API_KEY}`;
-    
-    // Proxy CORS para evitar bloqueo del navegador
-    const CORS_PROXY = 'https://corsproxy.io/?';
-    const url = `${CORS_PROXY}${encodeURIComponent(alphaUrl)}`;
-    
-    console.log(`[PriceService] 📡 Alpha Vantage request: ${symbol} (${currency})`);
-    console.log(`[PriceService]    URL: ${alphaUrl} (via CORS proxy)`);
+    const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${symbol}&apikey=${API_KEY}`;
     
     const response = await fetch(url);
     if (!response.ok) {
-      console.error(`[PriceService] ❌ Alpha Vantage API error: ${response.status}`);
+      console.error(`[PriceService] Alpha Vantage API error: ${response.status}`);
       return null;
     }
 
     const data = await response.json();
-    console.log(`[PriceService] Alpha Vantage response for ${symbol}:`, JSON.stringify(data, null, 2));
     
     // Verificar si hay error de rate limit o API
     if (data['Note']) {
@@ -162,20 +151,14 @@ async function getStockPrice(symbol, currency) {
     }
     
     // Alpha Vantage devuelve el precio en "Global Quote" > "05. price"
-    const globalQuote = data['Global Quote'];
-    if (!globalQuote || Object.keys(globalQuote).length === 0) {
-      console.warn(`[PriceService] ⚠️ Alpha Vantage: Global Quote vacío para ${symbol}`);
-      return null;
-    }
-
-    const price = parseFloat(globalQuote['05. price']);
-
+    const price = parseFloat(data['Global Quote']?.['05. price']);
+    
     if (!isNaN(price) && price > 0) {
-      console.log(`[PriceService] ✅ Alpha Vantage: ${symbol} = ${price} USD`);
+      console.log(`[PriceService] Alpha Vantage: ${symbol} = ${price} USD`);
       return price;
     }
-
-    console.warn(`[PriceService] ⚠️ Alpha Vantage: Precio inválido para ${symbol} (${price})`);
+    
+    console.warn(`[PriceService] Alpha Vantage: No se encontró precio para ${symbol}`);
     return null;
   } catch (error) {
     console.error('[PriceService] Error fetching stock price from Alpha Vantage:', error);
@@ -185,7 +168,6 @@ async function getStockPrice(symbol, currency) {
 
 /**
  * Obtiene precio de activo argentino (Cedears, Bonos, Acciones locales)
- * Utiliza la API pública de Rava Bursátil a través de proxy CORS
  * 
  * IMPORTANTE sobre CEDEARS:
  * - Un Cedear NO es lo mismo que la acción US original
@@ -194,91 +176,20 @@ async function getStockPrice(symbol, currency) {
  * - Cotizan en ARS con precio diferente al US
  * - Tienen spread, comisiones y arbitraje local
  * 
- * API utilizada: Rava Bursátil (https://www.rava.com/)
- * - Endpoint: https://api.rava.com.ar/cotizaciones/{ticker}
- * - Proxy CORS: https://corsproxy.io/ (para evitar bloqueo CORS en navegador)
- * - No requiere autenticación
- * - Cubre: Cedears, Acciones argentinas, Bonos, etc.
+ * APIs disponibles para implementar:
+ * 1. IOL API (Invertir Online) - requiere cuenta
+ * 2. PPI API - requiere cuenta  
+ * 3. Bolsar.com - scraping (no recomendado)
+ * 4. Portfolio Personal - API privada
  * 
- * NOTA: Los Cedears pueden tener sufijos en Rava (ej: AAPL.D, NVDA.D)
- * Intentamos múltiples variantes hasta encontrar el precio
- * 
- * @param {string} symbol - Símbolo del activo (ej: AAPL, GGAL, AL30)
+ * @param {string} symbol - Símbolo del activo
  * @param {string} currency - Moneda (ARS principalmente)
  * @returns {Promise<number|null>} - Precio actual o null si falla
  */
 async function getArgentinaAssetPrice(symbol, currency) {
-  // Para Cedears, intentar con sufijo .D (Dolares) que usa Rava
-  const variants = [
-    symbol.toUpperCase(),           // AAPL
-    `${symbol.toUpperCase()}.D`,    // AAPL.D (Cedears en Rava)
-    `${symbol.toUpperCase()}D`,     // AAPLD (algunas plataformas)
-    `${symbol.toUpperCase()}.BA`    // AAPL.BA (Buenos Aires)
-  ];
-  
-  // Proxy CORS para evitar bloqueo del navegador
-  const CORS_PROXY = 'https://corsproxy.io/?';
-  
-  for (const ticker of variants) {
-    try {
-      const ravaUrl = `https://api.rava.com.ar/cotizaciones/${ticker}`;
-      const url = `${CORS_PROXY}${encodeURIComponent(ravaUrl)}`;
-      console.log(`[PriceService] 📡 Rava request: ${symbol} → probando ${ticker}`);
-      console.log(`[PriceService]    URL: ${ravaUrl} (via CORS proxy)`);
-      
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        console.log(`[PriceService] Rava: ${ticker} no encontrado (${response.status}), probando siguiente variante...`);
-        continue; // Probar siguiente variante
-      }
-      
-      const data = await response.json();
-      console.log(`[PriceService] Rava response for ${ticker}:`, JSON.stringify(data, null, 2));
-      
-      // Verificar si hay datos
-      if (!data || typeof data !== 'object') {
-        console.log(`[PriceService] Rava: ${ticker} respuesta inválida, probando siguiente...`);
-        continue;
-      }
-      
-      // Rava devuelve múltiples precios, priorizamos:
-      // 1. ultimoPrecio (último precio operado)
-      // 2. ultimoCierre (cierre anterior si no operó hoy)
-      // 3. puntaCompradora/puntaVendedora (promedio de puntas)
-      
-      let price = null;
-      
-      if (data.ultimoPrecio && data.ultimoPrecio > 0) {
-        price = parseFloat(data.ultimoPrecio);
-      } else if (data.ultimoCierre && data.ultimoCierre > 0) {
-        price = parseFloat(data.ultimoCierre);
-        console.log(`[PriceService] Rava: usando precio de cierre para ${ticker}`);
-      } else if (data.puntaCompradora && data.puntaVendedora) {
-        // Promedio de puntas como último recurso
-        const bid = parseFloat(data.puntaCompradora);
-        const ask = parseFloat(data.puntaVendedora);
-        if (bid > 0 && ask > 0) {
-          price = (bid + ask) / 2;
-          console.log(`[PriceService] Rava: usando promedio de puntas para ${ticker}`);
-        }
-      }
-      
-      if (price && !isNaN(price) && price > 0) {
-        console.log(`[PriceService] ✅ Rava: ${symbol} (${ticker}) = ${price.toFixed(2)} ARS`);
-        return price;
-      }
-      
-      console.log(`[PriceService] Rava: ${ticker} sin precio válido, probando siguiente...`);
-      
-    } catch (error) {
-      console.log(`[PriceService] Error con ${ticker}:`, error.message, '- probando siguiente...');
-      continue;
-    }
-  }
-  
-  // Si ninguna variante funcionó
-  console.warn(`[PriceService] ❌ Rava: no se encontró precio para ${symbol} después de probar ${variants.length} variantes:`, variants);
+  // TODO: Implementar integración con API de mercado argentino
+  console.warn(`[PriceService] Precio de mercado argentino no implementado para ${symbol}`);
+  console.info(`[PriceService] Para obtener precios de Cedears/Acciones argentinas, se necesita integrar con IOL o PPI API`);
   return null;
 }
 
