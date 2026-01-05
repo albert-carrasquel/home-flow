@@ -23,10 +23,10 @@ export const sanitizeDecimal = (value, maxDecimals = 8) => {
 };
 
 export const sanitizeActivo = (value) =>
-  String(value).replace(/[^A-Za-z]/g, '').toUpperCase().slice(0, 10);
+  String(value).replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 10);
 
 export const sanitizeNombre = (value) =>
-  String(value).replace(/[^A-Za-zÀ-ÖØ-öø-ÿ\s]/g, '').toUpperCase().slice(0, 50);
+  String(value).replace(/[^A-Za-z0-9À-ÖØ-öø-ÿ\s]/g, '').toUpperCase().slice(0, 50);
 
 export const getUniqueActivos = (transactions = [], usuarioId) => {
   const filtered = transactions.filter((t) => t && t.activo && (usuarioId ? t.usuarioId === usuarioId : true));
