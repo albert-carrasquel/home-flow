@@ -653,19 +653,21 @@ const App = () => {
           return sum + (pos.cantidadActual * pos.precioPromedioCompra);
         }, 0);
         
-        const totalInvertidoGeneral = pnlReport.resumenGlobal.totalInvertido + totalInvertidoAbiertas;
-        const totalRecuperadoGeneral = pnlReport.resumenGlobal.totalRecuperado;
-        const pnlNetoGeneral = totalRecuperadoGeneral - pnlReport.resumenGlobal.totalInvertido;
-        const pnlPctGeneral = pnlReport.resumenGlobal.totalInvertido > 0 
-          ? (pnlNetoGeneral / pnlReport.resumenGlobal.totalInvertido) * 100 
+        const totalInvertidoCerradas = pnlReport.resumenGlobal.totalInvertido || 0;
+        const totalRecuperado = pnlReport.resumenGlobal.totalRecuperado || 0;
+        
+        const totalInvertidoGeneral = totalInvertidoCerradas + totalInvertidoAbiertas;
+        const pnlNetoCerradas = pnlReport.resumenGlobal.pnlNeto || 0;
+        const pnlPctCerradas = totalInvertidoCerradas > 0 
+          ? (pnlNetoCerradas / totalInvertidoCerradas) * 100 
           : 0;
 
         setDashboardData({
           investments: {
             totalInvertido: totalInvertidoGeneral,
-            totalRecuperado: totalRecuperadoGeneral,
-            pnlNeto: pnlNetoGeneral,
-            pnlPct: pnlPctGeneral,
+            totalRecuperado: totalRecuperado,
+            pnlNeto: pnlNetoCerradas,
+            pnlPct: pnlPctCerradas,
             posicionesAbiertas: pnlReport.posicionesAbiertas.length,
           },
           cashflow: {
