@@ -649,18 +649,30 @@ const App = () => {
         }
 
         // Calcular métricas de inversiones incluyendo posiciones abiertas
+        console.log('📊 DEBUG Dashboard - posicionesAbiertas:', pnlReport.posicionesAbiertas);
+        
         const totalInvertidoAbiertas = pnlReport.posicionesAbiertas.reduce((sum, pos) => {
-          return sum + (pos.cantidadActual * pos.precioPromedioCompra);
+          const cantidad = parseFloat(pos.cantidadActual) || 0;
+          const precio = parseFloat(pos.precioPromedioCompra) || 0;
+          const monto = cantidad * precio;
+          console.log(`  - ${pos.activo}: ${cantidad} × ${precio} = ${monto}`);
+          return sum + monto;
         }, 0);
         
-        const totalInvertidoCerradas = pnlReport.resumenGlobal.totalInvertido || 0;
-        const totalRecuperado = pnlReport.resumenGlobal.totalRecuperado || 0;
+        console.log('💰 Total Invertido Abiertas:', totalInvertidoAbiertas);
+        
+        const totalInvertidoCerradas = parseFloat(pnlReport.resumenGlobal.totalInvertido) || 0;
+        const totalRecuperado = parseFloat(pnlReport.resumenGlobal.totalRecuperado) || 0;
+        
+        console.log('💰 Total Invertido Cerradas:', totalInvertidoCerradas);
         
         const totalInvertidoGeneral = totalInvertidoCerradas + totalInvertidoAbiertas;
-        const pnlNetoCerradas = pnlReport.resumenGlobal.pnlNeto || 0;
+        const pnlNetoCerradas = parseFloat(pnlReport.resumenGlobal.pnlNeto) || 0;
         const pnlPctCerradas = totalInvertidoCerradas > 0 
           ? (pnlNetoCerradas / totalInvertidoCerradas) * 100 
           : 0;
+        
+        console.log('💰 Total Invertido General:', totalInvertidoGeneral);
 
         setDashboardData({
           investments: {
