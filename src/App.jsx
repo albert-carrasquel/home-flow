@@ -648,12 +648,24 @@ const App = () => {
           });
         }
 
+        // Calcular métricas de inversiones incluyendo posiciones abiertas
+        const totalInvertidoAbiertas = pnlReport.posicionesAbiertas.reduce((sum, pos) => {
+          return sum + (pos.cantidadActual * pos.precioPromedioCompra);
+        }, 0);
+        
+        const totalInvertidoGeneral = pnlReport.resumenGlobal.totalInvertido + totalInvertidoAbiertas;
+        const totalRecuperadoGeneral = pnlReport.resumenGlobal.totalRecuperado;
+        const pnlNetoGeneral = totalRecuperadoGeneral - pnlReport.resumenGlobal.totalInvertido;
+        const pnlPctGeneral = pnlReport.resumenGlobal.totalInvertido > 0 
+          ? (pnlNetoGeneral / pnlReport.resumenGlobal.totalInvertido) * 100 
+          : 0;
+
         setDashboardData({
           investments: {
-            totalInvertido: pnlReport.resumenGlobal.totalInvertido,
-            totalRecuperado: pnlReport.resumenGlobal.totalRecuperado,
-            pnlNeto: pnlReport.resumenGlobal.pnlNeto,
-            pnlPct: pnlReport.resumenGlobal.pnlPct,
+            totalInvertido: totalInvertidoGeneral,
+            totalRecuperado: totalRecuperadoGeneral,
+            pnlNeto: pnlNetoGeneral,
+            pnlPct: pnlPctGeneral,
             posicionesAbiertas: pnlReport.posicionesAbiertas.length,
           },
           cashflow: {
