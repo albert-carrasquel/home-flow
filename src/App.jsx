@@ -649,35 +649,22 @@ const App = () => {
         }
 
         // Calcular métricas de inversiones incluyendo posiciones abiertas
-        console.log('📊 DEBUG Dashboard - posicionesAbiertas:', pnlReport.posicionesAbiertas);
-        
-        if (pnlReport.posicionesAbiertas.length > 0) {
-          console.log('🔍 Primera posición completa:', JSON.stringify(pnlReport.posicionesAbiertas[0], null, 2));
-        }
-        
         const totalInvertidoAbiertas = pnlReport.posicionesAbiertas.reduce((sum, pos) => {
-          const cantidad = parseFloat(pos.cantidadActual) || 0;
-          const precio = parseFloat(pos.precioPromedioCompra) || parseFloat(pos.precioPromedio) || 0;
+          // Los campos correctos son cantidadRestante y promedioCompra
+          const cantidad = parseFloat(pos.cantidadRestante) || 0;
+          const precio = parseFloat(pos.promedioCompra) || 0;
           const monto = cantidad * precio;
-          console.log(`  - ${pos.activo}: cantidad=${cantidad}, precio=${precio}, monto=${monto}`);
-          console.log(`    Raw pos:`, { cantidadActual: pos.cantidadActual, precioPromedioCompra: pos.precioPromedioCompra, precioPromedio: pos.precioPromedio });
           return sum + monto;
         }, 0);
         
-        console.log('💰 Total Invertido Abiertas:', totalInvertidoAbiertas);
-        
         const totalInvertidoCerradas = parseFloat(pnlReport.resumenGlobal.totalInvertido) || 0;
         const totalRecuperado = parseFloat(pnlReport.resumenGlobal.totalRecuperado) || 0;
-        
-        console.log('💰 Total Invertido Cerradas:', totalInvertidoCerradas);
         
         const totalInvertidoGeneral = totalInvertidoCerradas + totalInvertidoAbiertas;
         const pnlNetoCerradas = parseFloat(pnlReport.resumenGlobal.pnlNeto) || 0;
         const pnlPctCerradas = totalInvertidoCerradas > 0 
           ? (pnlNetoCerradas / totalInvertidoCerradas) * 100 
           : 0;
-        
-        console.log('💰 Total Invertido General:', totalInvertidoGeneral);
 
         setDashboardData({
           investments: {
