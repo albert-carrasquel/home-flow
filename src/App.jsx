@@ -651,11 +651,16 @@ const App = () => {
         // Calcular métricas de inversiones incluyendo posiciones abiertas
         console.log('📊 DEBUG Dashboard - posicionesAbiertas:', pnlReport.posicionesAbiertas);
         
+        if (pnlReport.posicionesAbiertas.length > 0) {
+          console.log('🔍 Primera posición completa:', JSON.stringify(pnlReport.posicionesAbiertas[0], null, 2));
+        }
+        
         const totalInvertidoAbiertas = pnlReport.posicionesAbiertas.reduce((sum, pos) => {
           const cantidad = parseFloat(pos.cantidadActual) || 0;
-          const precio = parseFloat(pos.precioPromedioCompra) || 0;
+          const precio = parseFloat(pos.precioPromedioCompra) || parseFloat(pos.precioPromedio) || 0;
           const monto = cantidad * precio;
-          console.log(`  - ${pos.activo}: ${cantidad} × ${precio} = ${monto}`);
+          console.log(`  - ${pos.activo}: cantidad=${cantidad}, precio=${precio}, monto=${monto}`);
+          console.log(`    Raw pos:`, { cantidadActual: pos.cantidadActual, precioPromedioCompra: pos.precioPromedioCompra, precioPromedio: pos.precioPromedio });
           return sum + monto;
         }, 0);
         
