@@ -134,30 +134,42 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
 
 ## 📊 **MEJORAS IMPORTANTES (Media Prioridad)**
 
-### 6. Filtros Avanzados en Portfolio
+### 6. Importador de Transacciones desde IOL ⭐⭐⭐⭐
+**Estado**: ⏳ PENDIENTE (Removido temporalmente - 2026-01-05)
+**Problema**: Carga manual de transacciones históricas es muy tedioso (100+ operaciones).
+**Solución Propuesta**: Importador automático desde archivo Excel de IOL
+- [ ] Parser de archivos XLS/XLSX de IOL (formato HTML table)
+- [ ] Mapeo automático de columnas IOL → HomeFlow
+- [ ] Detección inteligente de tipo de activo
+- [ ] UI con preview editable antes de importar
+- [ ] Batch insert con progress bar
+- [ ] Manejo de errores por transacción
+**Nota**: Feature removida temporalmente por problemas de parsing. Se reintegrará en el futuro con testing más robusto.
+
+### 7. Filtros Avanzados en Portfolio
 **Estado**: ⏳ PENDIENTE
 - [ ] Por rango de fechas de compra
 - [ ] Por rentabilidad (mostrar solo ganadores/perdedores)
 - [ ] Por exchange
 
-### 7. Alertas y Notificaciones
+### 8. Alertas y Notificaciones
 **Estado**: ⏳ PENDIENTE
 - [ ] Recordatorio de dividendos/cupones
 - [ ] Alertas de precio (si activo sube/baja X%)
 - [ ] Resumen mensual automático
 
-### 8. Análisis por Período Fiscal
+### 9. Análisis por Período Fiscal
 **Estado**: ⏳ PENDIENTE
 - [ ] Vista anual para declaración de impuestos
 - [ ] Separación de ganancias de capital vs dividendos
 - [ ] Cálculo automático de impuestos (configurable por país)
 
-### 9. Búsqueda y Filtrado Rápido
+### 10. Búsqueda y Filtrado Rápido
 **Estado**: ⏳ PENDIENTE
 - [ ] Barra de búsqueda global (por activo, descripción, monto)
 - [ ] Filtros persistentes (guardar búsquedas favoritas)
 
-### 10. Transacciones Recurrentes
+### 11. Transacciones Recurrentes
 **Estado**: ⏳ PENDIENTE
 - [ ] Template para gastos fijos (alquiler, servicios)
 - [ ] Programar ingresos mensuales (sueldo)
@@ -167,25 +179,25 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
 
 ## 🔧 **MEJORAS TÉCNICAS (Media-Baja Prioridad)**
 
-### 11. Performance y Escalabilidad
+### 12. Performance y Escalabilidad
 **Estado**: ⏳ PENDIENTE
 - [ ] Paginación en reportes (si tienes >1000 transacciones)
 - [ ] Índices compuestos en Firestore para queries frecuentes
 - [ ] Lazy loading de datos históricos
 
-### 12. Modo Offline
+### 13. Modo Offline
 **Estado**: ⏳ PENDIENTE
 - [ ] Service Worker para PWA
 - [ ] Guardar datos localmente con IndexedDB
 - [ ] Sincronizar cuando vuelve conexión
 
-### 13. Seguridad Mejorada
+### 14. Seguridad Mejorada
 **Estado**: ⏳ PENDIENTE
 - [ ] Audit log completo (quién modificó qué y cuándo)
 - [ ] Backup automático mensual
 - [ ] Encriptación de datos sensibles
 
-### 14. Testing
+### 15. Testing
 **Estado**: ⏳ PENDIENTE
 - [ ] Tests unitarios del engine FIFO (`reporting.js`)
 - [ ] Tests de integración para flows críticos
@@ -243,8 +255,8 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
 
 ## 📈 **MÉTRICAS DE ÉXITO**
 
-- [ ] Tiempo de carga inicial < 2 segundos
-- [ ] 100% de features críticas implementadas
+- [x] Tiempo de carga inicial < 2 segundos
+- [x] 100% de features críticas implementadas (5/5: Dashboard, Portfolio, Gráficos, Exportación)
 - [ ] 0 errores en consola de producción
 - [ ] Cobertura de tests > 70%
 - [ ] Lighthouse score > 90
@@ -258,7 +270,13 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
 - **Opción 2**: Chart.js (más ligero, más control)
 - **Decisión**: Recharts implementado en Feature 4 - perfecto para casos de uso de HomeFlow
 
+### Rollback de Importador IOL (2026-01-05)
+- **Razón**: Problemas de parsing y estabilidad en producción
+- **Decisión**: Feature removida temporalmente para estabilizar la aplicación
+- **Estado**: Aplicación funcional con entrada manual de transacciones
+- **Plan futuro**: Reintegrar con testing más robusto y validación exhaustiva
+
 ---
 
-**Última actualización**: 2025-12-18
-**Próxima revisión**: Después de implementar Dashboard
+**Última actualización**: 2026-01-05
+**Próxima revisión**: Después de estabilizar entrada manual de transacciones
