@@ -387,6 +387,10 @@ const App = () => {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [docToDelete, setDocToDelete] = useState(null);
   const [deleteType, setDeleteType] = useState(null); // 'transaction' o 'cashflow'
+  const [massDeleteType, setMassDeleteType] = useState(null); // 'all-transactions', 'all-cashflow', 'everything'
+  const [showMassDeleteModal, setShowMassDeleteModal] = useState(false);
+  const [transactionToAnnul, setTransactionToAnnul] = useState(null);
+  const [showAnnulTransactionModal, setShowAnnulTransactionModal] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(!!DEV_BYPASS_AUTH);
   const [loginError, setLoginError] = useState(null);
   const [showLogin, setShowLogin] = useState(true);
@@ -945,6 +949,8 @@ const App = () => {
       createdAt: serverTimestamp(),
       occurredAt: dateStringToTimestamp(newTransaction.fechaTransaccion),
       exchange: newTransaction.exchange || '',
+      // Anulación system
+      anulada: false,
     };
     try {
       const transactionsPath = getTransactionsCollectionPath(appId);
@@ -1068,6 +1074,93 @@ const App = () => {
     }
   };
 
+  const handleShowAnnulTransaction = (id) => {
+    setTransactionToAnnul(id);
+    setShowAnnulTransactionModal(true);
+  };
+
+  const handleCancelAnnulTransaction = () => {
+    setTransactionToAnnul(null);
+    setShowAnnulTransactionModal(false);
+  };
+
+  const handleAnnulTransaction = async () => {
+    if (!transactionToAnnul) return;
+    try {
+      const transactionsPath = getTransactionsCollectionPath(appId);
+      const docRef = doc(db, transactionsPath, transactionToAnnul);
+      await updateDoc(docRef, {
+        anulada: true,
+        anuladaAt: serverTimestamp(),
+        anuladaBy: userId || 'dev-albert',
+        voidedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      handleCancelAnnulTransaction();
+      setSuccessMessage('Transacción anulada exitosamente');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      console.error('Error annulling transaction:', err);
+      setError('Error al anular la transacción.');
+      handleCancelAnnulTransaction();
+    }
+  };
+
+  const handleShowMassDelete = (type) => {
+    setMassDeleteType(type);
+    setShowMassDeleteModal(true);
+  };
+
+  const handleCancelMassDelete = () => {
+    setMassDeleteType(null);
+    setShowMassDeleteModal(false);
+  };
+
+  const handleMassDelete = async () => {
+    if (!massDeleteType || !db) return;
+    
+    try {
+      if (massDeleteType === 'all-transactions') {
+        const transactionsPath = getTransactionsCollectionPath(appId);
+        const q = query(collection(db, transactionsPath));
+        const snapshot = await getDocs(q);
+        const deletePromises = snapshot.docs.map(docSnap => deleteDoc(docSnap.ref));
+        await Promise.all(deletePromises);
+        setSuccessMessage(`${snapshot.size} inversiones eliminadas exitosamente`);
+      } else if (massDeleteType === 'all-cashflow') {
+        const cashflowPath = getCashflowCollectionPath(appId);
+        const q = query(collection(db, cashflowPath));
+        const snapshot = await getDocs(q);
+        const deletePromises = snapshot.docs.map(docSnap => deleteDoc(docSnap.ref));
+        await Promise.all(deletePromises);
+        setSuccessMessage(`${snapshot.size} registros de cashflow eliminados exitosamente`);
+      } else if (massDeleteType === 'everything') {
+        const transactionsPath = getTransactionsCollectionPath(appId);
+        const cashflowPath = getCashflowCollectionPath(appId);
+        
+        const [txSnapshot, cfSnapshot] = await Promise.all([
+          getDocs(query(collection(db, transactionsPath))),
+          getDocs(query(collection(db, cashflowPath)))
+        ]);
+        
+        const allDeletePromises = [
+          ...txSnapshot.docs.map(docSnap => deleteDoc(docSnap.ref)),
+          ...cfSnapshot.docs.map(docSnap => deleteDoc(docSnap.ref))
+        ];
+        
+        await Promise.all(allDeletePromises);
+        setSuccessMessage(`${txSnapshot.size + cfSnapshot.size} registros eliminados exitosamente`);
+      }
+      
+      handleCancelMassDelete();
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (err) {
+      console.error('Error in mass delete:', err);
+      setError('Error al eliminar los registros.');
+      handleCancelMassDelete();
+    }
+  };
+
   // --- REPORTS HANDLERS ---
   const handleReportFilterChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -1159,13 +1252,17 @@ const App = () => {
       // Calculate metrics
       let metrics = {};
       if (reportFilters.tipoDatos === 'inversiones') {
+        // IMPORTANTE: Para métricas financieras, SIEMPRE excluir anuladas
+        // El checkbox "incluirAnulados" solo controla la visibilidad en la tabla, no los cálculos
+        const activosParaMetricas = filtered.filter((r) => !r.anulada);
+        
         // Use investment P&L engine for inversiones
-        const pnlReport = calculateInvestmentReport(filtered, reportFilters);
+        const pnlReport = calculateInvestmentReport(activosParaMetricas, reportFilters);
         setInvestmentReport(pnlReport);
         
         // Keep basic metrics for compatibility
-        const compras = filtered.filter((r) => r.tipoOperacion === 'compra');
-        const ventas = filtered.filter((r) => r.tipoOperacion === 'venta');
+        const compras = activosParaMetricas.filter((r) => r.tipoOperacion === 'compra');
+        const ventas = activosParaMetricas.filter((r) => r.tipoOperacion === 'venta');
         const totalCompras = compras.reduce((sum, r) => sum + (r.montoTotal || 0), 0);
         const totalVentas = ventas.reduce((sum, r) => sum + (r.montoTotal || 0), 0);
         metrics = { 
@@ -1530,6 +1627,49 @@ const App = () => {
                 <button className="hf-button hf-button-primary" onClick={() => setTab('reportes')}>
                   <span className="hf-feature-icon">📊</span>
                   <span>Ver Reportes Detallados</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Dangerous Actions */}
+            <div className="hf-card" style={{marginTop: 'var(--hf-space-lg)', borderColor: 'var(--hf-error)'}}>
+              <h3 className="text-lg font-semibold mb-4" style={{color: 'var(--hf-error)'}}>⚠️ Zona Peligrosa</h3>
+              <p style={{color: 'var(--hf-text-secondary)', marginBottom: 'var(--hf-space-md)', fontSize: '0.875rem'}}>
+                Estas acciones son permanentes y no se pueden deshacer. Usa con precaución.
+              </p>
+              <div className="hf-grid-3" style={{gap: 'var(--hf-space-md)'}}>
+                <button 
+                  className="hf-button" 
+                  onClick={() => handleShowMassDelete('all-cashflow')}
+                  style={{
+                    backgroundColor: 'var(--hf-error)', 
+                    color: 'white',
+                    border: 'none'
+                  }}
+                >
+                  <span>🗑️ Eliminar Todos los Gastos</span>
+                </button>
+                <button 
+                  className="hf-button" 
+                  onClick={() => handleShowMassDelete('all-transactions')}
+                  style={{
+                    backgroundColor: 'var(--hf-error)', 
+                    color: 'white',
+                    border: 'none'
+                  }}
+                >
+                  <span>🗑️ Eliminar Todas las Inversiones</span>
+                </button>
+                <button 
+                  className="hf-button" 
+                  onClick={() => handleShowMassDelete('everything')}
+                  style={{
+                    backgroundColor: '#991b1b', 
+                    color: 'white',
+                    border: 'none'
+                  }}
+                >
+                  <span>💣 Eliminar TODO</span>
                 </button>
               </div>
             </div>
@@ -2484,17 +2624,34 @@ const App = () => {
                           <td>{r.anulada ? <span className="hf-badge hf-badge-warning">ANULADA</span> : <span className="hf-badge hf-badge-success">Activa</span>}</td>
                         )}
                         <td>
-                          <button 
-                            onClick={() => {
-                              setDocToDelete(r.id);
-                              setDeleteType(reportFilters.tipoDatos === 'inversiones' ? 'transaction' : 'cashflow');
-                              setShowConfirmModal(true);
-                            }}
-                            className="p-2 rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                            title="Eliminar registro"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="hf-flex" style={{gap: '0.5rem'}}>
+                            {!r.anulada && (
+                              <button 
+                                onClick={() => {
+                                  if (reportFilters.tipoDatos === 'inversiones') {
+                                    handleShowAnnulTransaction(r.id);
+                                  } else {
+                                    handleShowAnnul(r.id);
+                                  }
+                                }}
+                                className="p-2 rounded-full text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 transition-colors"
+                                title="Anular registro"
+                              >
+                                <span style={{fontSize: '1rem'}}>⊘</span>
+                              </button>
+                            )}
+                            <button 
+                              onClick={() => {
+                                setDocToDelete(r.id);
+                                setDeleteType(reportFilters.tipoDatos === 'inversiones' ? 'transaction' : 'cashflow');
+                                setShowConfirmModal(true);
+                              }}
+                              className="p-2 rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                              title="Eliminar registro"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2517,9 +2674,35 @@ const App = () => {
   return (
     <>
       {contenido}
-      {/* Modal de Confirmación */}
+      {/* Modal de Confirmación para eliminación individual */}
       {showConfirmModal && (
         <ConfirmationModal onConfirm={handleDeleteTransaction} onCancel={handleCancelDelete} />
+      )}
+      {/* Modal de Confirmación para eliminación masiva */}
+      {showMassDeleteModal && (
+        <ConfirmationModal 
+          onConfirm={handleMassDelete} 
+          onCancel={handleCancelMassDelete}
+          message={
+            massDeleteType === 'all-transactions' 
+              ? '¿Estás seguro de eliminar TODAS las inversiones? Esta acción es permanente.' 
+              : massDeleteType === 'all-cashflow'
+              ? '¿Estás seguro de eliminar TODOS los registros de cashflow? Esta acción es permanente.'
+              : '¿Estás seguro de eliminar TODOS los datos (inversiones y cashflow)? Esta acción es permanente y NO se puede deshacer.'
+          }
+        />
+      )}
+      {/* Modal de Confirmación para anulación de transacción */}
+      {showAnnulTransactionModal && (
+        <ConfirmationModal 
+          onConfirm={handleAnnulTransaction} 
+          onCancel={handleCancelAnnulTransaction}
+          message="¿Estás seguro de anular esta transacción de inversión? Se marcará como anulada pero no se eliminará del registro."
+        />
+      )}
+      {/* Modal de Confirmación para anulación de cashflow */}
+      {showAnnulModal && (
+        <ConfirmationModal onConfirm={handleAnnulCashflow} onCancel={handleCancelAnnul} />
       )}
     </>
   );
