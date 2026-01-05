@@ -21,9 +21,11 @@ import {
 import { updateDoc, orderBy, limit, getDocs } from 'firebase/firestore';
 import logo from './assets/logo.png';
 import ConfirmationModal from './components/ConfirmationModal';
+import TransactionItem from './components/TransactionItem';
 import { formatCurrency, sanitizeDecimal, sanitizeActivo, sanitizeNombre, getUniqueActivos, dateStringToTimestamp, getOccurredAtFromDoc } from './utils/formatters';
 import { calculateInvestmentReport } from './utils/reporting';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
+import { Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 // --- CONFIGURACIÓN GLOBAL ---
@@ -384,6 +386,7 @@ const App = () => {
   const [successMessage, setSuccessMessage] = useState(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [docToDelete, setDocToDelete] = useState(null);
+  const [deleteType, setDeleteType] = useState(null); // 'transaction' o 'cashflow'
   const [isSuperAdmin, setIsSuperAdmin] = useState(!!DEV_BYPASS_AUTH);
   const [loginError, setLoginError] = useState(null);
   const [showLogin, setShowLogin] = useState(true);
@@ -1227,20 +1230,25 @@ const App = () => {
 
   const handleCancelDelete = () => {
     setDocToDelete(null);
+    setDeleteType(null);
     setShowConfirmModal(false);
   };
 
   const handleDeleteTransaction = async () => {
-    if (!docToDelete) return;
+    if (!docToDelete || !deleteType) return;
 
     try {
-      const transactionsPath = getTransactionsCollectionPath(appId);
-      const docRef = doc(db, transactionsPath, docToDelete);
+      const collectionPath = deleteType === 'transaction' 
+        ? getTransactionsCollectionPath(appId) 
+        : getCashflowCollectionPath(appId);
+      const docRef = doc(db, collectionPath, docToDelete);
       await deleteDoc(docRef);
       handleCancelDelete();
+      setSuccessMessage('Registro eliminado exitosamente');
+      setTimeout(() => setSuccessMessage(null), 3000);
     } catch (e) {
       console.error('Error deleting document: ', e);
-      setError('Error al eliminar la transacción.');
+      setError(`Error al eliminar el ${deleteType === 'transaction' ? 'registro de inversión' : 'registro de cashflow'}.`);
       handleCancelDelete();
     }
   };
@@ -2447,6 +2455,7 @@ const App = () => {
                       {reportFilters.incluirAnulados && (
                         <th>Estado</th>
                       )}
+                      <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2474,6 +2483,19 @@ const App = () => {
                         {reportFilters.incluirAnulados && (
                           <td>{r.anulada ? <span className="hf-badge hf-badge-warning">ANULADA</span> : <span className="hf-badge hf-badge-success">Activa</span>}</td>
                         )}
+                        <td>
+                          <button 
+                            onClick={() => {
+                              setDocToDelete(r.id);
+                              setDeleteType(reportFilters.tipoDatos === 'inversiones' ? 'transaction' : 'cashflow');
+                              setShowConfirmModal(true);
+                            }}
+                            className="p-2 rounded-full text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                            title="Eliminar registro"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
