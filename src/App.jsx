@@ -67,9 +67,10 @@ const getTransactionsCollectionPath = (appId) =>
 const getCashflowCollectionPath = (appId) =>
   `artifacts/${appId}/public/data/cashflow`;
 
-// Monthly checklist collection path: artifacts/{appId}/public/data/monthly-checklists/{YYYY-MM}
+// Monthly checklist collection path: artifacts/{appId}/public/data/monthly-checklist-{YYYY-MM}
+// Nota: Incluimos el mes en el nombre de la colección para mantener 5 segmentos (número impar requerido por Firestore)
 const getMonthlyChecklistPath = (appId, month) =>
-  `artifacts/${appId}/public/data/monthly-checklists/${month}`;
+  `artifacts/${appId}/public/data/monthly-checklist-${month}`;
 
 // Templates de gastos mensuales hardcodeados
 const MONTHLY_EXPENSE_TEMPLATES = [
