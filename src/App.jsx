@@ -826,8 +826,8 @@ const App = () => {
 
   // 7. Monthly Checklist - Cargar y detectar cambio de mes
   useEffect(() => {
-    if (!db) {
-      console.log('Monthly checklist: db not ready yet');
+    if (!db || !isAuthReady) {
+      console.log('Monthly checklist: waiting for db/auth...', { db: !!db, isAuthReady });
       return;
     }
 
@@ -835,22 +835,24 @@ const App = () => {
       try {
         setChecklistLoading(true);
         
-        // Detectar si cambió el mes
+        // Detectar mes actual
         const now = new Date();
         const detectedMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         
-        console.log('Loading monthly checklist for:', detectedMonth);
+        console.log('✅ Loading monthly checklist for:', detectedMonth);
         console.log('Current month state:', currentMonth);
         
+        // Si cambió el mes, actualizar estado
         if (detectedMonth !== currentMonth) {
+          console.log('📅 Month changed! Updating from', currentMonth, 'to', detectedMonth);
           setCurrentMonth(detectedMonth);
         }
         
         const checklistPath = getMonthlyChecklistPath(appId, detectedMonth);
-        console.log('Checklist path:', checklistPath);
+        console.log('📂 Checklist path:', checklistPath);
         
         const checklistSnapshot = await getDocs(collection(db, checklistPath));
-        console.log('Checklist documents found:', checklistSnapshot.size);
+        console.log('📄 Checklist documents found:', checklistSnapshot.size);
         
         const checklistMap = {};
         checklistSnapshot.docs.forEach(doc => {
@@ -861,8 +863,8 @@ const App = () => {
           };
         });
         
-        console.log('Checklist map:', checklistMap);
-        console.log('Templates to merge:', MONTHLY_EXPENSE_TEMPLATES);
+        console.log('🗂️ Checklist map:', checklistMap);
+        console.log('📋 Templates to merge:', MONTHLY_EXPENSE_TEMPLATES);
         
         // Merge templates con estado del checklist
         const checklistWithStatus = MONTHLY_EXPENSE_TEMPLATES.map(template => ({
@@ -875,10 +877,11 @@ const App = () => {
           cashflowId: checklistMap[template.id]?.cashflowId || null
         }));
         
-        console.log('Final checklist with status:', checklistWithStatus);
+        console.log('✅ Final checklist with status:', checklistWithStatus);
+        console.log('📊 Checklist length:', checklistWithStatus.length);
         setMonthlyChecklist(checklistWithStatus);
       } catch (err) {
-        console.error('Error loading monthly checklist:', err);
+        console.error('❌ Error loading monthly checklist:', err);
       } finally {
         setChecklistLoading(false);
       }
@@ -891,12 +894,13 @@ const App = () => {
       const now = new Date();
       const detectedMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       if (detectedMonth !== currentMonth) {
+        console.log('⏰ Interval detected month change');
         loadMonthlyChecklist();
       }
     }, 60000); // Check every minute
     
     return () => clearInterval(interval);
-  }, [db, appId, currentMonth]);
+  }, [db, isAuthReady, appId]);
 
   // (Metrics and super-admin derivation are simplified/disabled for now)
 
