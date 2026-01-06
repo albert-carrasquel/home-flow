@@ -521,7 +521,14 @@ const App = () => {
         setCashflows(items.slice(0, 5));
       } catch (e) {
         console.error('Error refreshing cashflows:', e);
-        setError('Error fetching cashflow: Problema de red o configuración.');
+        // Mostrar error más detallado
+        let errorMsg = 'Error cargando gastos/ingresos';
+        if (e.code === 'permission-denied') {
+          errorMsg = 'Acceso denegado a Firestore. Verifica que estés autenticado y tengas permisos.';
+        } else if (e.message) {
+          errorMsg = `Error: ${e.message}`;
+        }
+        setError(errorMsg);
       }
     };
 
