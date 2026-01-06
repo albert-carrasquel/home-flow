@@ -6,6 +6,7 @@ import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
+  signOut,
 } from 'firebase/auth';
 import {
   getFirestore,
@@ -1829,6 +1830,20 @@ const App = () => {
       setShowLogin(false);
     } catch (e) {
       setLoginError(e.message);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setUserId(null);
+      setUserName('');
+      setIsSuperAdmin(false);
+      setShowLogin(true);
+      setTab('dashboard');
+    } catch (error) {
+      console.error('Logout error:', error);
+      setMessage({ text: 'Error al cerrar sesión', type: 'error' });
     }
   };
 
