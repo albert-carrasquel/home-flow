@@ -222,13 +222,20 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
   - Eliminadas 63 líneas de código duplicado
   - Build exitoso ✅
   
-**Próximos pasos**:
-- [ ] **Paso 2**: Extraer componentes grandes del JSX
-  - Mover formularios a `components/forms/`
-  - Mover tablas a componentes reutilizables
-  - Mover secciones de Dashboard y Portfolio
+- [x] **Paso 2**: Extraer componentes grandes del JSX (Commit `14c7cfe`)
+  - Creado `components/Dashboard.jsx` (210 líneas)
+  - Creado `components/Portfolio.jsx` (235 líneas)
+  - Reducido App.jsx de 3489 a 3034 líneas (-455 líneas)
+  - Funcionalidad preservada al 100%
+  - Build exitoso ✅
   
-- [ ] **Paso 3**: Centralizar lógica de Firebase
+**Próximos pasos**:
+- [ ] **Paso 3**: Extraer más componentes (Inversiones, Gastos, Reportes)
+  - Extraer formulario de inversiones con su lógica
+  - Extraer sección de gastos/ingresos con checklist mensual
+  - Extraer sección de reportes con filtros y exportación
+  
+- [ ] **Paso 4**: Centralizar lógica de Firebase
   - Mover handlers de transacciones a `services/transactionsService.js`
   - Mover handlers de cashflow a `services/cashflowService.js`
   - Mover handlers de checklist a nuevo servicio
