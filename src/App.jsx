@@ -1223,6 +1223,8 @@ const App = () => {
     try {
       const cashflowPath = getCashflowCollectionPath(appId);
       const docRef = doc(db, cashflowPath, cashflowToAnnul);
+      
+      // 1. Anular el cashflow
       await updateDoc(docRef, {
         anulada: true,
         anuladaAt: serverTimestamp(), // legacy field (keep for compatibility)
@@ -1230,6 +1232,77 @@ const App = () => {
         voidedAt: serverTimestamp(), // NEW STANDARD
         updatedAt: serverTimestamp(), // NEW STANDARD
       });
+      
+      // 2. Verificar si este cashflow pertenece al checklist mensual y desmarcarlo
+      try {
+        // Buscar en checklist del mes actual
+        const checklistPath = getMonthlyChecklistPath(appId, currentMonth);
+        const checklistSnapshot = await getDocs(collection(db, checklistPath));
+        
+        let foundInChecklist = false;
+        for (const checklistDoc of checklistSnapshot.docs) {
+          const data = checklistDoc.data();
+          if (data.cashflowId === cashflowToAnnul) {
+            // Eliminar el registro del checklist
+            await deleteDoc(doc(db, checklistPath, checklistDoc.id));
+            
+            // Actualizar estado local
+            setMonthlyChecklist(prev => prev.map(item =>
+              item.id === data.templateId
+                ? { ...item, completed: false, amount: null, moneda: 'ARS', registeredAt: null, registeredBy: null, cashflowId: null }
+                : item
+            ));
+            
+            foundInChecklist = true;
+            console.log('✅ Checklist item unmarked:', data.templateId);
+            break;
+          }
+        }
+        
+        // Si no se encontró en el mes actual, buscar en historial (3 meses anteriores)
+        if (!foundInChecklist) {
+          for (let i = 1; i <= 3; i++) {
+            const date = new Date(new Date().getFullYear(), new Date().getMonth() - i, 1);
+            const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            const historyChecklistPath = getMonthlyChecklistPath(appId, monthKey);
+            const historySnapshot = await getDocs(collection(db, historyChecklistPath));
+            
+            for (const checklistDoc of historySnapshot.docs) {
+              const data = checklistDoc.data();
+              if (data.cashflowId === cashflowToAnnul) {
+                await deleteDoc(doc(db, historyChecklistPath, checklistDoc.id));
+                
+                // Actualizar historial local
+                setChecklistHistory(prev => prev.map(historyMonth => {
+                  if (historyMonth.monthKey === monthKey) {
+                    const updatedItems = historyMonth.items.map(item =>
+                      item.id === data.templateId
+                        ? { ...item, completed: false, amount: null, moneda: 'ARS', registeredAt: null, registeredBy: null, cashflowId: null }
+                        : item
+                    );
+                    return {
+                      ...historyMonth,
+                      items: updatedItems,
+                      completed: updatedItems.filter(i => i.completed).length,
+                      pending: updatedItems.filter(i => !i.completed)
+                    };
+                  }
+                  return historyMonth;
+                }));
+                
+                foundInChecklist = true;
+                console.log('✅ History checklist item unmarked:', data.templateId, 'from', monthKey);
+                break;
+              }
+            }
+            if (foundInChecklist) break;
+          }
+        }
+      } catch (checklistErr) {
+        console.error('Error updating checklist after annul:', checklistErr);
+        // No mostrar error al usuario, el cashflow ya fue anulado exitosamente
+      }
+      
       handleCancelAnnul();
     } catch (err) {
       console.error('Error annulling cashflow:', err);
@@ -1429,8 +1502,12 @@ const App = () => {
       // 1. Actualizar el cashflow existente
       const cashflowPath = getCashflowCollectionPath(appId);
       const cashflowRef = doc(db, cashflowPath, template.cashflowId);
+      
+      // Des-anular si estaba anulado y actualizar monto
       await updateDoc(cashflowRef, {
-        monto: newAmount
+        monto: newAmount,
+        anulada: false, // Des-anular automáticamente al modificar
+        updatedAt: serverTimestamp()
       });
       
       // 2. Actualizar el checklist
@@ -1454,7 +1531,7 @@ const App = () => {
         [template.id]: ''
       }));
       
-      setSuccessMessage(`✅ ${template.nombre} actualizado exitosamente`);
+      setSuccessMessage(`✅ ${template.nombre} actualizado y habilitado exitosamente`);
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
       console.error('Error updating monthly expense:', err);
