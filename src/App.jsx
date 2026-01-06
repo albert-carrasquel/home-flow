@@ -27,6 +27,8 @@ import { calculateInvestmentReport } from './utils/reporting';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
 import { Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { DEV_BYPASS_AUTH, DEV_USER_ID, SUPER_ADMINS, USER_NAMES, MONTHLY_EXPENSE_TEMPLATES } from './config/constants';
+import { getTransactionsPath, getCashflowPath, getMonthlyChecklistPath } from './services/firestorePaths';
 
 // --- CONFIGURACIÓN GLOBAL ---
 
@@ -36,10 +38,6 @@ const rawAppId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // Limpieza del appId para que sea un segmento válido de ruta en Firestore
 const appId = rawAppId.replace(/[.:]/g, '-').replace(/\//g, '-');
-
-// Flags DEV (ponelos arriba del componente App o cerca de la config global)
-const DEV_BYPASS_AUTH = true;
-const DEV_USER_ID = 'dev-albert';
 
 // Configuración de Firebase:
 // - Si __firebase_config existe (entorno "especial" tipo Canvas / Gemini), lo usamos.
@@ -57,44 +55,6 @@ const firebaseConfig =
     };
 
 // Nota: __initial_auth_token puede inyectarse en entornos especiales; no se usa actualmente.
-
-// Ruta de Firestore:
-// artifacts/{appId}/public/data/transactions
-const getTransactionsCollectionPath = (appId) =>
-  `artifacts/${appId}/public/data/transactions`;
-
-// Cashflow collection path: artifacts/{appId}/public/data/cashflow
-const getCashflowCollectionPath = (appId) =>
-  `artifacts/${appId}/public/data/cashflow`;
-
-// Monthly checklist collection path: artifacts/{appId}/public/data/monthly-checklist-{YYYY-MM}
-// Nota: Incluimos el mes en el nombre de la colección para mantener 5 segmentos (número impar requerido por Firestore)
-const getMonthlyChecklistPath = (appId, month) =>
-  `artifacts/${appId}/public/data/monthly-checklist-${month}`;
-
-// Templates de gastos mensuales hardcodeados
-const MONTHLY_EXPENSE_TEMPLATES = [
-  { id: 'alquiler', nombre: 'Alquiler', categoria: 'Servicios', orden: 1 },
-  { id: 'luz', nombre: 'Luz', categoria: 'Servicios', orden: 2 },
-  { id: 'gas', nombre: 'Gas', categoria: 'Servicios', orden: 3 },
-  { id: 'agua', nombre: 'Agua', categoria: 'Servicios', orden: 4 },
-  { id: 'internet', nombre: 'Internet', categoria: 'Servicios', orden: 5 },
-  { id: 'expensas', nombre: 'Expensas', categoria: 'Servicios', orden: 6 },
-  { id: 'celular', nombre: 'Celular', categoria: 'Servicios', orden: 7 }
-];
-
-// UIDs de los super admins permitidos
-const SUPER_ADMINS = [
-  '9dZMQNvgovSWE4lP7tOUNDzy6Md2', // Reemplaza por el UID real
-  'T0Kh0eHZ05he8iqD6vEG2G2c7Rl2', // Reemplaza por el UID real
-];
-
-// Mapeo de UID a nombre de usuario
-const USER_NAMES = {
-  '9dZMQNvgovSWE4lP7tOUNDzy6Md2': 'Albert Carrasquel',
-  'T0Kh0eHZ05he8iqD6vEG2G2c7Rl2': 'Haydee Macias',
-  'dev-albert': 'Albert Carrasquel', // Modo desarrollo
-};
 
 const LoginForm = ({ onLogin, error }) => {
   const [email, setEmail] = useState('');
@@ -482,7 +442,7 @@ const App = () => {
   useEffect(() => {
     if (!isAuthReady || !db || !userId) return;
 
-    const transactionsPath = getTransactionsCollectionPath(appId);
+    const transactionsPath = getTransactionsPath(appId);
 
     const q = query(collection(db, transactionsPath));
 
@@ -524,7 +484,7 @@ const App = () => {
   useEffect(() => {
     if (!isAuthReady || !db) return;
 
-    const cashflowPath = getCashflowCollectionPath(appId);
+    const cashflowPath = getCashflowPath(appId);
 
     // Helper to fetch merged last-5 by timestamp and fallback to fecha
     const refreshCashflows = async () => {
@@ -599,8 +559,8 @@ const App = () => {
         setDashboardLoading(true);
 
         // 1. Fetch all transactions and cashflows
-        const transactionsPath = getTransactionsCollectionPath(appId);
-        const cashflowPath = getCashflowCollectionPath(appId);
+        const transactionsPath = getTransactionsPath(appId);
+        const cashflowPath = getCashflowPath(appId);
 
         const [transactionsSnapshot, cashflowSnapshot] = await Promise.all([
           getDocs(query(collection(db, transactionsPath))),
@@ -749,7 +709,7 @@ const App = () => {
     const calculatePortfolio = async () => {
       setPortfolioLoading(true);
       try {
-        const transactionsPath = getTransactionsCollectionPath(appId);
+        const transactionsPath = getTransactionsPath(appId);
         const transactionsSnapshot = await getDocs(query(collection(db, transactionsPath)));
         const allTransactions = transactionsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
         
@@ -1118,7 +1078,7 @@ const App = () => {
       anulada: false,
     };
     try {
-      const transactionsPath = getTransactionsCollectionPath(appId);
+      const transactionsPath = getTransactionsPath(appId);
       await addDoc(collection(db, transactionsPath), transactionToSave);
 
       setSuccessMessage('✅ Transacción guardada correctamente');
@@ -1197,7 +1157,7 @@ const App = () => {
     };
 
     try {
-      const cashflowPath = getCashflowCollectionPath(appId);
+      const cashflowPath = getCashflowPath(appId);
       await addDoc(collection(db, cashflowPath), cashflowToSave);
       setSuccessMessage('✅ Registro guardado');
       setTimeout(() => setSuccessMessage(null), 2000);
@@ -1222,7 +1182,7 @@ const App = () => {
   const handleAnnulCashflow = async () => {
     if (!cashflowToAnnul) return;
     try {
-      const cashflowPath = getCashflowCollectionPath(appId);
+      const cashflowPath = getCashflowPath(appId);
       const docRef = doc(db, cashflowPath, cashflowToAnnul);
       
       // 1. Anular el cashflow
@@ -1325,7 +1285,7 @@ const App = () => {
   const handleAnnulTransaction = async () => {
     if (!transactionToAnnul) return;
     try {
-      const transactionsPath = getTransactionsCollectionPath(appId);
+      const transactionsPath = getTransactionsPath(appId);
       const docRef = doc(db, transactionsPath, transactionToAnnul);
       await updateDoc(docRef, {
         anulada: true,
@@ -1359,22 +1319,22 @@ const App = () => {
     
     try {
       if (massDeleteType === 'all-transactions') {
-        const transactionsPath = getTransactionsCollectionPath(appId);
+        const transactionsPath = getTransactionsPath(appId);
         const q = query(collection(db, transactionsPath));
         const snapshot = await getDocs(q);
         const deletePromises = snapshot.docs.map(docSnap => deleteDoc(docSnap.ref));
         await Promise.all(deletePromises);
         setSuccessMessage(`${snapshot.size} inversiones eliminadas exitosamente`);
       } else if (massDeleteType === 'all-cashflow') {
-        const cashflowPath = getCashflowCollectionPath(appId);
+        const cashflowPath = getCashflowPath(appId);
         const q = query(collection(db, cashflowPath));
         const snapshot = await getDocs(q);
         const deletePromises = snapshot.docs.map(docSnap => deleteDoc(docSnap.ref));
         await Promise.all(deletePromises);
         setSuccessMessage(`${snapshot.size} registros de cashflow eliminados exitosamente`);
       } else if (massDeleteType === 'everything') {
-        const transactionsPath = getTransactionsCollectionPath(appId);
-        const cashflowPath = getCashflowCollectionPath(appId);
+        const transactionsPath = getTransactionsPath(appId);
+        const cashflowPath = getCashflowPath(appId);
         
         const [txSnapshot, cfSnapshot] = await Promise.all([
           getDocs(query(collection(db, transactionsPath))),
@@ -1419,7 +1379,7 @@ const App = () => {
     
     try {
       // 1. Crear el registro de cashflow normal
-      const cashflowPath = getCashflowCollectionPath(appId);
+      const cashflowPath = getCashflowPath(appId);
       const now = new Date();
       const cashflowData = {
         tipo: 'gasto',
@@ -1501,7 +1461,7 @@ const App = () => {
     
     try {
       // 1. Actualizar el cashflow existente
-      const cashflowPath = getCashflowCollectionPath(appId);
+      const cashflowPath = getCashflowPath(appId);
       const cashflowRef = doc(db, cashflowPath, template.cashflowId);
       
       // Des-anular si estaba anulado y actualizar monto
@@ -1585,7 +1545,7 @@ const App = () => {
     
     try {
       // 1. Crear el registro de cashflow con fecha del mes correspondiente
-      const cashflowPath = getCashflowCollectionPath(appId);
+      const cashflowPath = getCashflowPath(appId);
       // Usar primer día del mes atrasado
       const [year, month] = monthKey.split('-');
       const overdueDate = new Date(parseInt(year), parseInt(month) - 1, 1);
@@ -1709,7 +1669,7 @@ const App = () => {
     setReportErrors({});
 
     try {
-      const collectionPath = reportFilters.tipoDatos === 'inversiones' ? getTransactionsCollectionPath(appId) : getCashflowCollectionPath(appId);
+      const collectionPath = reportFilters.tipoDatos === 'inversiones' ? getTransactionsPath(appId) : getCashflowPath(appId);
       const fromDate = new Date(`${reportFilters.fechaDesde}T00:00:00`);
       const toDate = new Date(`${reportFilters.fechaHasta}T23:59:59`);
 
@@ -1803,7 +1763,7 @@ const App = () => {
     if (!db || reportFilters.tipoDatos !== 'inversiones') return;
     const fetchActivos = async () => {
       try {
-        const transactionsPath = getTransactionsCollectionPath(appId);
+        const transactionsPath = getTransactionsPath(appId);
         const q = query(collection(db, transactionsPath));
         const snapshot = await getDocs(q);
         const activos = new Set();
@@ -1836,8 +1796,8 @@ const App = () => {
 
     try {
       const collectionPath = deleteType === 'transaction' 
-        ? getTransactionsCollectionPath(appId) 
-        : getCashflowCollectionPath(appId);
+        ? getTransactionsPath(appId) 
+        : getCashflowPath(appId);
       const docRef = doc(db, collectionPath, docToDelete);
       await deleteDoc(docRef);
       handleCancelDelete();
@@ -3396,7 +3356,7 @@ const App = () => {
                                   if (reportFilters.tipoDatos === 'inversiones') {
                                     handleShowAnnulTransaction(r.id);
                                   } else {
-                                    handleShowAnnul(r.id);
+                                    _handleShowAnnulConfirm(r.id);
                                   }
                                 }}
                                 className="p-2 rounded-full text-gray-400 hover:text-yellow-600 hover:bg-yellow-50 transition-colors"

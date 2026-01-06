@@ -14,6 +14,7 @@ export const SUPER_ADMINS = [
 export const USER_NAMES = {
   '9dZMQNvgovSWE4lP7tOUNDzy6Md2': 'Albert Carrasquel',
   'T0Kh0eHZ05he8iqD6vEG2G2c7Rl2': 'Haydee Macias',
+  'dev-albert': 'Albert Carrasquel', // Modo desarrollo
 };
 
 // Nombres cortos para UI compacta
@@ -53,4 +54,15 @@ export const MEDIOS_PAGO = [
   'Transferencia',
   'Billetera digital',
   'Cheque',
+];
+
+// Templates de gastos mensuales hardcodeados
+export const MONTHLY_EXPENSE_TEMPLATES = [
+  { id: 'alquiler', nombre: 'Alquiler', categoria: 'Servicios', orden: 1 },
+  { id: 'luz', nombre: 'Luz', categoria: 'Servicios', orden: 2 },
+  { id: 'gas', nombre: 'Gas', categoria: 'Servicios', orden: 3 },
+  { id: 'agua', nombre: 'Agua', categoria: 'Servicios', orden: 4 },
+  { id: 'internet', nombre: 'Internet', categoria: 'Servicios', orden: 5 },
+  { id: 'expensas', nombre: 'Expensas', categoria: 'Servicios', orden: 6 },
+  { id: 'celular', nombre: 'Celular', categoria: 'Servicios', orden: 7 }
 ];

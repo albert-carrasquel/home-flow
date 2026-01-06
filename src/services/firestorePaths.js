@@ -7,3 +7,6 @@ export const getTransactionsPath = (appId) =>
 
 export const getCashflowPath = (appId) =>
   `artifacts/${appId}/public/data/cashflow`;
+
+export const getMonthlyChecklistPath = (appId, month) =>
+  `artifacts/${appId}/public/data/monthly-checklist-${month}`;
