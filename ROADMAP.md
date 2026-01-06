@@ -170,33 +170,35 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
 - [ ] Filtros persistentes (guardar búsquedas favoritas)
 
 ### ✅ 11. Checklist de Gastos Mensuales ⭐⭐⭐⭐⭐
-**Estado**: 🚧 EN DESARROLLO (Iniciado: 2026-01-06)
+**Estado**: ✅ COMPLETADO (2026-01-06)
 **Commit base**: `2ceb75f` (fix: permitir números en símbolos y nombres de activos)
+**Commit final**: `d1fdaaf` (feat: implementar checklist de gastos mensuales)
 **Problema**: Gastos recurrentes mensuales requieren carga manual repetitiva cada mes.
 **Solución**: Lista de templates hardcodeados con checklist mensual
 - [x] Templates hardcodeados (7 gastos comunes)
-- [ ] UI en tab Gastos/Ingresos con lista mensual
-- [ ] Sistema de registro rápido (monto + click)
-- [ ] Items se tachan al completar
-- [ ] Reset automático al cambiar de mes
-- [ ] Estado compartido entre usuarios (Albert y Haydee)
-- [ ] Restricción: un gasto solo una vez por mes
-**Implementación Planificada**:
+- [x] UI en tab Gastos/Ingresos con lista mensual
+- [x] Sistema de registro rápido (monto + click)
+- [x] Items se tachan al completar
+- [x] Reset automático al cambiar de mes
+- [x] Estado compartido entre usuarios (Albert y Haydee)
+- [x] Restricción: un gasto solo una vez por mes
+**Fecha inicio**: 2026-01-06 (tarde)
+**Fecha fin**: 2026-01-06 (tarde)
+**Implementación**:
 - Collection Firestore: `monthly-checklists/{appId}/{YYYY-MM}/{templateId}`
 - Templates: Alquiler, Luz, Gas, Agua, Internet, Expensas, Celular
-- Estados: `monthlyChecklist`, `checklistLoading`, `currentMonth`
-- useEffect: Detecta cambio de mes y resetea automáticamente
-- UI: Sección colapsable arriba del formulario de gastos
-- Cada item muestra: ☐/✓, nombre, input monto, botón [Registrar]
-- Items completados: tachados con monto, usuario y fecha
-- Badge: "4/7 completados" en título
-
-### 12. Transacciones Recurrentes Avanzadas
-**Estado**: ⏳ PENDIENTE
-- [ ] Configuración de templates personalizada
-- [ ] Programar ingresos mensuales (sueldo)
-- [ ] Un clic para duplicar última transacción
-- [ ] Sugerir montos del mes anterior
+- Estados: `monthlyChecklist`, `checklistLoading`, `currentMonth`, `monthlyExpenseAmounts`
+- useEffect: Detecta cambio de mes cada minuto y resetea automáticamente
+- UI: Sección arriba del formulario de gastos con diseño limpio
+- Cada item muestra: 
+  - Pendiente: ☐ + nombre + input monto + botón [Registrar]
+  - Completado: ✓ + nombre + monto + usuario + fecha (tachado)
+- Badge: "X/7 completados" en título
+- Handler `handleRegisterMonthlyExpense`: 
+  - Crea cashflow normal con todos los campos
+  - Marca en checklist con referencia al cashflow
+  - Actualiza estado local inmediatamente
+- Validación: monto > 0, no permite duplicados en el mismo mes
 
 ---
 
