@@ -18,7 +18,7 @@ import {
   deleteDoc,
   setLogLevel, // Importación de setLogLevel para depuración
 } from 'firebase/firestore';
-import { updateDoc, orderBy, limit, getDocs } from 'firebase/firestore';
+import { updateDoc, orderBy, limit, getDocs, setDoc } from 'firebase/firestore';
 import logo from './assets/logo.png';
 import ConfirmationModal from './components/ConfirmationModal';
 import TransactionItem from './components/TransactionItem';
@@ -66,6 +66,21 @@ const getTransactionsCollectionPath = (appId) =>
 // Cashflow collection path: artifacts/{appId}/public/data/cashflow
 const getCashflowCollectionPath = (appId) =>
   `artifacts/${appId}/public/data/cashflow`;
+
+// Monthly checklist collection path: artifacts/{appId}/public/data/monthly-checklists/{YYYY-MM}
+const getMonthlyChecklistPath = (appId, month) =>
+  `artifacts/${appId}/public/data/monthly-checklists/${month}`;
+
+// Templates de gastos mensuales hardcodeados
+const MONTHLY_EXPENSE_TEMPLATES = [
+  { id: 'alquiler', nombre: 'Alquiler', categoria: 'Servicios', orden: 1 },
+  { id: 'luz', nombre: 'Luz', categoria: 'Servicios', orden: 2 },
+  { id: 'gas', nombre: 'Gas', categoria: 'Servicios', orden: 3 },
+  { id: 'agua', nombre: 'Agua', categoria: 'Servicios', orden: 4 },
+  { id: 'internet', nombre: 'Internet', categoria: 'Servicios', orden: 5 },
+  { id: 'expensas', nombre: 'Expensas', categoria: 'Servicios', orden: 6 },
+  { id: 'celular', nombre: 'Celular', categoria: 'Servicios', orden: 7 }
+];
 
 // UIDs de los super admins permitidos
 const SUPER_ADMINS = [
@@ -408,6 +423,15 @@ const App = () => {
   // Portfolio states
   const [portfolioData, setPortfolioData] = useState(null);
   const [portfolioLoading, setPortfolioLoading] = useState(true);
+
+  // Monthly checklist states
+  const [monthlyChecklist, setMonthlyChecklist] = useState([]);
+  const [checklistLoading, setChecklistLoading] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [monthlyExpenseAmounts, setMonthlyExpenseAmounts] = useState({});
 
 
   // 1. Inicialización de Firebase (y bypass de auth en DEV)
@@ -800,6 +824,67 @@ const App = () => {
     calculatePortfolio();
   }, [db, isAuthReady, _transactions]);
 
+  // 7. Monthly Checklist - Cargar y detectar cambio de mes
+  useEffect(() => {
+    if (!db) return;
+
+    const loadMonthlyChecklist = async () => {
+      try {
+        setChecklistLoading(true);
+        
+        // Detectar si cambió el mes
+        const now = new Date();
+        const detectedMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        
+        if (detectedMonth !== currentMonth) {
+          setCurrentMonth(detectedMonth);
+        }
+        
+        const checklistPath = getMonthlyChecklistPath(appId, detectedMonth);
+        const checklistSnapshot = await getDocs(collection(db, checklistPath));
+        
+        const checklistMap = {};
+        checklistSnapshot.docs.forEach(doc => {
+          const data = doc.data();
+          checklistMap[data.templateId] = {
+            ...data,
+            id: doc.id
+          };
+        });
+        
+        // Merge templates con estado del checklist
+        const checklistWithStatus = MONTHLY_EXPENSE_TEMPLATES.map(template => ({
+          ...template,
+          completed: checklistMap[template.id]?.completed || false,
+          amount: checklistMap[template.id]?.amount || null,
+          moneda: checklistMap[template.id]?.moneda || 'ARS',
+          registeredAt: checklistMap[template.id]?.registeredAt || null,
+          registeredBy: checklistMap[template.id]?.registeredBy || null,
+          cashflowId: checklistMap[template.id]?.cashflowId || null
+        }));
+        
+        setMonthlyChecklist(checklistWithStatus);
+      } catch (err) {
+        console.error('Error loading monthly checklist:', err);
+      } finally {
+        setChecklistLoading(false);
+      }
+    };
+
+    loadMonthlyChecklist();
+    
+    // Re-check cada minuto para detectar cambio de mes
+    const interval = setInterval(() => {
+      const now = new Date();
+      const detectedMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      if (detectedMonth !== currentMonth) {
+        loadMonthlyChecklist();
+      }
+    }, 60000); // Check every minute
+    
+    return () => clearInterval(interval);
+  }, [db, appId, currentMonth]);
+
   // (Metrics and super-admin derivation are simplified/disabled for now)
 
   // Manejo de inputs del formulario
@@ -1158,6 +1243,86 @@ const App = () => {
       console.error('Error in mass delete:', err);
       setError('Error al eliminar los registros.');
       handleCancelMassDelete();
+    }
+  };
+
+  // --- MONTHLY CHECKLIST HANDLERS ---
+  const handleMonthlyExpenseAmountChange = (templateId, value) => {
+    setMonthlyExpenseAmounts(prev => ({
+      ...prev,
+      [templateId]: value
+    }));
+  };
+
+  const handleRegisterMonthlyExpense = async (template) => {
+    const amount = parseFloat(monthlyExpenseAmounts[template.id]);
+    
+    if (!amount || amount <= 0) {
+      setError('Ingresa un monto válido mayor a 0');
+      return;
+    }
+    
+    if (!db) return;
+    
+    try {
+      // 1. Crear el registro de cashflow normal
+      const cashflowPath = getCashflowCollectionPath(appId);
+      const cashflowData = {
+        tipo: 'gasto',
+        categoria: template.categoria,
+        descripcion: template.nombre,
+        monto: amount,
+        moneda: 'ARS',
+        medioPago: 'Transferencia', // Default
+        usuarioId: userId || 'dev-albert',
+        fechaOperacion: dateStringToTimestamp(new Date().toISOString().split('T')[0]),
+        createdAt: serverTimestamp(),
+        anulada: false
+      };
+      
+      const cashflowRef = await addDoc(collection(db, cashflowPath), cashflowData);
+      
+      // 2. Marcar en el checklist mensual
+      const checklistPath = getMonthlyChecklistPath(appId, currentMonth);
+      const checklistDocId = `${currentMonth}-${template.id}`;
+      
+      await setDoc(doc(db, checklistPath, checklistDocId), {
+        templateId: template.id,
+        mes: currentMonth,
+        completed: true,
+        amount,
+        moneda: 'ARS',
+        registeredAt: serverTimestamp(),
+        registeredBy: userId || 'dev-albert',
+        cashflowId: cashflowRef.id
+      });
+      
+      // 3. Actualizar estado local
+      setMonthlyChecklist(prev => prev.map(item =>
+        item.id === template.id
+          ? {
+              ...item,
+              completed: true,
+              amount,
+              moneda: 'ARS',
+              registeredAt: new Date(),
+              registeredBy: userId || 'dev-albert',
+              cashflowId: cashflowRef.id
+            }
+          : item
+      ));
+      
+      // 4. Limpiar input
+      setMonthlyExpenseAmounts(prev => ({
+        ...prev,
+        [template.id]: ''
+      }));
+      
+      setSuccessMessage(`✅ ${template.nombre} registrado exitosamente`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      console.error('Error registering monthly expense:', err);
+      setError(`Error al registrar ${template.nombre}.`);
     }
   };
 
@@ -2164,8 +2329,77 @@ const App = () => {
           </div>
           <button className="hf-button hf-button-ghost" onClick={() => setTab('dashboard')}>🏠 Dashboard</button>
         </div>
+
+        {/* Monthly Checklist Section */}
+        <div className="hf-card" style={{maxWidth: '900px', margin: '0 auto var(--hf-space-lg)'}}>
+          <div className="hf-flex-between" style={{marginBottom: 'var(--hf-space-md)'}}>
+            <h3 className="text-lg font-semibold">
+              📋 Gastos Mensuales - {new Date(currentMonth + '-01').toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
+            </h3>
+            <div className="hf-badge hf-badge-info">
+              {monthlyChecklist.filter(item => item.completed).length}/{monthlyChecklist.length} completados
+            </div>
+          </div>
+          
+          {checklistLoading ? (
+            <div style={{textAlign: 'center', padding: 'var(--hf-space-lg)', color: 'var(--hf-text-secondary)'}}>
+              <div className="hf-loading" style={{width: '30px', height: '30px', margin: '0 auto'}}></div>
+              <p style={{marginTop: 'var(--hf-space-sm)'}}>Cargando checklist...</p>
+            </div>
+          ) : (
+            <div className="hf-list">
+              {monthlyChecklist.map((item) => (
+                <div 
+                  key={item.id} 
+                  className="hf-list-item"
+                  style={{
+                    opacity: item.completed ? 0.6 : 1,
+                    textDecoration: item.completed ? 'line-through' : 'none'
+                  }}
+                >
+                  <div className="hf-flex" style={{alignItems: 'center', gap: 'var(--hf-space-md)', flexWrap: 'wrap', flex: 1}}>
+                    <div style={{minWidth: '24px', fontSize: '1.25rem'}}>
+                      {item.completed ? '✓' : '☐'}
+                    </div>
+                    <div style={{minWidth: '120px', fontWeight: 600}}>
+                      {item.nombre}
+                    </div>
+                    {item.completed ? (
+                      <div style={{flex: 1, color: 'var(--hf-text-secondary)', fontSize: '0.875rem'}}>
+                        {formatCurrency(item.amount, item.moneda)} • {USER_NAMES[item.registeredBy]?.split(' ')[0] || 'Usuario'} • {item.registeredAt?.toDate ? item.registeredAt.toDate().toLocaleDateString('es-ES') : 'Hoy'}
+                      </div>
+                    ) : (
+                      <div className="hf-flex" style={{gap: 'var(--hf-space-sm)', alignItems: 'center', flex: 1}}>
+                        <input
+                          type="number"
+                          placeholder="Monto"
+                          value={monthlyExpenseAmounts[item.id] || ''}
+                          onChange={(e) => handleMonthlyExpenseAmountChange(item.id, e.target.value)}
+                          className="hf-input"
+                          style={{maxWidth: '150px'}}
+                          step="0.01"
+                          min="0"
+                        />
+                        <span style={{color: 'var(--hf-text-secondary)'}}>ARS</span>
+                        <button
+                          type="button"
+                          onClick={() => handleRegisterMonthlyExpense(item)}
+                          className="hf-button hf-button-primary"
+                          style={{padding: '0.5rem 1rem', fontSize: '0.875rem'}}
+                        >
+                          Registrar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         <div className="hf-card" style={{maxWidth: '900px', margin: '0 auto'}}>
-          <h2 className="text-xl font-bold mb-4 hf-text-gradient text-center">Registrar Gasto / Ingreso</h2>
+          <h2 className="text-xl font-bold mb-4 hf-text-gradient text-center">Registrar Gasto / Ingreso Manual</h2>
 
           {successMessage && (
             <div className="hf-alert hf-alert-success">
