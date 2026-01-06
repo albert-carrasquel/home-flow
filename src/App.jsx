@@ -1876,8 +1876,17 @@ const App = () => {
   } else if (!DEV_BYPASS_AUTH && !isSuperAdmin && isAuthReady) {
     contenido = (
       <div className="hf-page hf-flex-center" style={{minHeight: '100vh'}}>
-        <div className="hf-card hf-alert-error" style={{maxWidth: '500px'}}>
+        <div className="hf-card hf-alert-error" style={{maxWidth: '500px', textAlign: 'center'}}>
           <h2 className="text-2xl font-bold mb-4">Acceso Denegado</h2>
+          <p style={{marginBottom: 'var(--hf-space-lg)', color: 'var(--hf-text-secondary)'}}>
+            No tienes permisos para acceder a esta aplicación. Por favor, contacta al administrador.
+          </p>
+          <button 
+            className="hf-button hf-button-secondary" 
+            onClick={handleLogout}
+          >
+            Volver al Login
+          </button>
         </div>
       </div>
     );
