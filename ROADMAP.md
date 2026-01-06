@@ -208,25 +208,70 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
 
 ## 🔧 **MEJORAS TÉCNICAS (Media-Baja Prioridad)**
 
-### 12. Performance y Escalabilidad
+### ⏳ 12. Refactorización de Código (En Progreso)
+**Estado**: ⏳ EN PROGRESO (Iniciado 2026-01-06)
+**Problema**: App.jsx muy grande (3500+ líneas), código duplicado, constantes hardcodeadas.
+**Objetivo**: Mejorar estructura, legibilidad y mantenibilidad sin romper funcionalidades.
+**Estrategia**: Refactor incremental y seguro con validación después de cada paso.
+
+**Progreso actual**:
+- [x] **Paso 1**: Centralizar constantes y paths (Commit `7826cb3`)
+  - Movido `DEV_BYPASS_AUTH`, `DEV_USER_ID`, `SUPER_ADMINS`, `USER_NAMES` a `config/constants.js`
+  - Movido `MONTHLY_EXPENSE_TEMPLATES` a `config/constants.js`
+  - Movido `getTransactionsPath`, `getCashflowPath`, `getMonthlyChecklistPath` a `services/firestorePaths.js`
+  - Eliminadas 63 líneas de código duplicado
+  - Build exitoso ✅
+  
+**Próximos pasos**:
+- [ ] **Paso 2**: Extraer componentes grandes del JSX
+  - Mover formularios a `components/forms/`
+  - Mover tablas a componentes reutilizables
+  - Mover secciones de Dashboard y Portfolio
+  
+- [ ] **Paso 3**: Centralizar lógica de Firebase
+  - Mover handlers de transacciones a `services/transactionsService.js`
+  - Mover handlers de cashflow a `services/cashflowService.js`
+  - Mover handlers de checklist a nuevo servicio
+  
+- [ ] **Paso 4**: Consolidar hooks personalizados
+  - Crear `useMonthlyChecklist.js` para lógica del checklist
+  - Crear `useDashboard.js` para métricas del dashboard
+  - Crear `usePortfolio.js` para posiciones abiertas
+  
+- [ ] **Paso 5**: Limpieza final
+  - Eliminar `App_optimized.jsx` y `App_refactored.jsx` (obsoletos)
+  - Remover imports sin uso
+  - Verificar 0 errores de lint
+  - Reducir App.jsx a <1000 líneas
+
+**Beneficios esperados**:
+- ✅ Código más mantenible y testeable
+- ✅ Componentes reutilizables
+- ✅ Menos duplicación
+- ✅ Más fácil agregar features nuevas
+- ✅ Sin romper funcionalidades existentes
+
+---
+
+### 13. Performance y Escalabilidad
 **Estado**: ⏳ PENDIENTE
 - [ ] Paginación en reportes (si tienes >1000 transacciones)
 - [ ] Índices compuestos en Firestore para queries frecuentes
 - [ ] Lazy loading de datos históricos
 
-### 13. Modo Offline
+### 14. Modo Offline
 **Estado**: ⏳ PENDIENTE
 - [ ] Service Worker para PWA
 - [ ] Guardar datos localmente con IndexedDB
 - [ ] Sincronizar cuando vuelve conexión
 
-### 14. Seguridad Mejorada
+### 15. Seguridad Mejorada
 **Estado**: ⏳ PENDIENTE
 - [ ] Audit log completo (quién modificó qué y cuándo)
 - [ ] Backup automático mensual
 - [ ] Encriptación de datos sensibles
 
-### 15. Testing
+### 16. Testing
 **Estado**: ⏳ PENDIENTE
 - [ ] Tests unitarios del engine FIFO (`reporting.js`)
 - [ ] Tests de integración para flows críticos
@@ -236,34 +281,34 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
 
 ## 💡 **FEATURES AVANZADAS (Baja Prioridad - "Nice to Have")**
 
-### 15. Comparación de Performance
+### 17. Comparación de Performance
 **Estado**: ⏳ PENDIENTE
 - [ ] Benchmark contra índices (S&P500, MERVAL, Bitcoin)
 - [ ] Calculadora de "¿Qué hubiera pasado si...?"
 
-### 16. Gestión de Múltiples Carteras
+### 18. Gestión de Múltiples Carteras
 **Estado**: ⏳ PENDIENTE
 - [ ] Separar portfolio personal vs inversión de largo plazo
 - [ ] Vista consolidada y por cartera individual
 
-### 17. Integración Bancaria
+### 19. Integración Bancaria
 **Estado**: ⏳ PENDIENTE
 - [ ] Importar movimientos desde CSV de bancos
 - [ ] Parsers para extractos comunes (Santander, Galicia, etc.)
 
-### 18. Análisis de Riesgo
+### 20. Análisis de Riesgo
 **Estado**: ⏳ PENDIENTE
 - [ ] Volatilidad del portfolio
 - [ ] Sharpe Ratio, Max Drawdown
 - [ ] Correlación entre activos
 
-### 19. Modo Multi-Usuario Mejorado
+### 21. Modo Multi-Usuario Mejorado
 **Estado**: ⏳ PENDIENTE
 - [ ] Permisos granulares (admin, viewer, editor)
 - [ ] Vista familiar consolidada
 - [ ] Chat/comentarios en transacciones
 
-### 20. Integraciones con Exchanges
+### 22. Integraciones con Exchanges
 **Estado**: ⏳ PENDIENTE
 - [ ] Importar trades automáticamente desde Binance API
 - [ ] Sincronización en tiempo real
@@ -307,5 +352,5 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
 
 ---
 
-**Última actualización**: 2026-01-05
-**Próxima revisión**: Después de estabilizar entrada manual de transacciones
+**Última actualización**: 2026-01-06
+**Próxima revisión**: Continuar con refactor incremental (Paso 2: extraer componentes)
