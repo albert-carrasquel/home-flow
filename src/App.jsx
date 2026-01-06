@@ -24,7 +24,7 @@ import ConfirmationModal from './components/ConfirmationModal';
 import TransactionItem from './components/TransactionItem';
 import { formatCurrency, sanitizeDecimal, sanitizeActivo, sanitizeNombre, getUniqueActivos, dateStringToTimestamp, getOccurredAtFromDoc } from './utils/formatters';
 import { calculateInvestmentReport } from './utils/reporting';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, LineChart, Line } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { DEV_BYPASS_AUTH, DEV_USER_ID, SUPER_ADMINS, USER_NAMES, MONTHLY_EXPENSE_TEMPLATES } from './config/constants';
@@ -2979,56 +2979,5 @@ const App = () => {
     </>
   );
 };
-
-// Tarjeta de métrica
-const MetricCard = ({ title, amount, icon, color, moneda }) => {
-  const IconComponent = icon;
-  const colorClasses = {
-    green: 'bg-green-500 text-white',
-    red: 'bg-red-500 text-white',
-    indigo: 'bg-indigo-500 text-white',
-  };
-  const shadowClass = {
-    green: 'shadow-green-300',
-    red: 'shadow-red-300',
-    indigo: 'shadow-indigo-300',
-  };
-
-  return (
-    <div className="bg-white p-6 rounded-xl shadow-2xl transform hover:scale-[1.02] transition duration-300 ease-in-out">
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="text-sm font-medium text-gray-500">{title}</p>
-          <h3 className={`text-3xl font-extrabold mt-1 ${color === 'red' && amount < 0 ? 'text-red-600' : 'text-gray-900'}`}>
-            {formatCurrency(amount, moneda)}
-          </h3>
-        </div>
-        <div className={`p-3 rounded-full ${colorClasses[color]} shadow-lg ${shadowClass[color]}`}>
-          <IconComponent className="w-6 h-6" />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// TransactionItem was extracted to `src/components/TransactionItem.jsx` for reuse and testing.
-
-// Radio option
-const RadioOption = ({ id, name, value, checked, onChange, label }) => (
-  <div className="flex items-center">
-    <input
-      id={id}
-      name={name}
-      type="radio"
-      value={value}
-      checked={checked}
-      onChange={onChange}
-      className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300"
-    />
-    <label htmlFor={id} className="ml-2 block text-sm font-medium text-gray-700">
-      {label}
-    </label>
-  </div>
-);
 
 export default App;
