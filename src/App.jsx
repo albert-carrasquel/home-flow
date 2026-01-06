@@ -434,6 +434,9 @@ const App = () => {
   });
   const [monthlyExpenseAmounts, setMonthlyExpenseAmounts] = useState({});
   const [editingChecklistItem, setEditingChecklistItem] = useState(null);
+  const [checklistHistory, setChecklistHistory] = useState([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
 
   // 1. Inicialización de Firebase (y bypass de auth en DEV)
@@ -891,6 +894,62 @@ const App = () => {
 
     loadMonthlyChecklist();
     
+    // Cargar historial de últimos 3 meses
+    const loadChecklistHistory = async () => {
+      try {
+        setHistoryLoading(true);
+        const history = [];
+        const now = new Date();
+        
+        // Generar últimos 3 meses (excluyendo el actual)
+        for (let i = 1; i <= 3; i++) {
+          const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+          const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
+          
+          const checklistPath = getMonthlyChecklistPath(appId, monthKey);
+          const checklistSnapshot = await getDocs(collection(db, checklistPath));
+          
+          const checklistMap = {};
+          checklistSnapshot.docs.forEach(doc => {
+            const data = doc.data();
+            checklistMap[data.templateId] = { ...data, id: doc.id };
+          });
+          
+          // Merge con templates para detectar faltantes
+          const items = MONTHLY_EXPENSE_TEMPLATES.map(template => ({
+            ...template,
+            completed: checklistMap[template.id]?.completed || false,
+            amount: checklistMap[template.id]?.amount || null,
+            moneda: checklistMap[template.id]?.moneda || 'ARS',
+            registeredAt: checklistMap[template.id]?.registeredAt || null,
+            registeredBy: checklistMap[template.id]?.registeredBy || null,
+            cashflowId: checklistMap[template.id]?.cashflowId || null
+          }));
+          
+          const completed = items.filter(item => item.completed).length;
+          const pending = items.filter(item => !item.completed);
+          
+          history.push({
+            monthKey,
+            monthName,
+            items,
+            completed,
+            total: MONTHLY_EXPENSE_TEMPLATES.length,
+            pending
+          });
+        }
+        
+        setChecklistHistory(history);
+      } catch (err) {
+        console.error('❌ Error loading checklist history:', err);
+      } finally {
+        setHistoryLoading(false);
+      }
+    };
+    
+    loadChecklistHistory();
+    
     // Re-check cada minuto para detectar cambio de mes
     const interval = setInterval(() => {
       const now = new Date();
@@ -898,6 +957,7 @@ const App = () => {
       if (detectedMonth !== currentMonth) {
         console.log('⏰ Interval detected month change');
         loadMonthlyChecklist();
+        loadChecklistHistory();
       }
     }, 60000); // Check every minute
     
@@ -1408,6 +1468,95 @@ const App = () => {
       ...prev,
       [itemId]: ''
     }));
+  };
+
+  const handlePayOverdue = async (template, monthKey, monthName) => {
+    const amountKey = `overdue-${monthKey}-${template.id}`;
+    const amount = parseFloat(monthlyExpenseAmounts[amountKey]);
+    
+    if (!amount || amount <= 0) {
+      setError('Ingresa un monto válido mayor a 0');
+      return;
+    }
+    
+    if (!db) return;
+    
+    try {
+      // 1. Crear el registro de cashflow con fecha del mes correspondiente
+      const cashflowPath = getCashflowCollectionPath(appId);
+      // Usar primer día del mes atrasado
+      const [year, month] = monthKey.split('-');
+      const overdueDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+      
+      const cashflowData = {
+        tipo: 'gasto',
+        categoria: template.categoria,
+        descripcion: `${template.nombre} (${monthName})`,
+        monto: amount,
+        moneda: 'ARS',
+        medioPago: 'Transferencia',
+        usuarioId: userId || 'dev-albert',
+        fechaOperacion: dateStringToTimestamp(overdueDate.toISOString().split('T')[0]),
+        timestamp: serverTimestamp(), // Para que aparezca en "Últimos 5 registros"
+        createdAt: serverTimestamp(),
+        anulada: false
+      };
+      
+      const cashflowRef = await addDoc(collection(db, cashflowPath), cashflowData);
+      
+      // 2. Marcar en el checklist del mes correspondiente
+      const checklistPath = getMonthlyChecklistPath(appId, monthKey);
+      const checklistDocId = `${monthKey}-${template.id}`;
+      
+      await setDoc(doc(db, checklistPath, checklistDocId), {
+        templateId: template.id,
+        mes: monthKey,
+        completed: true,
+        amount,
+        moneda: 'ARS',
+        registeredAt: serverTimestamp(),
+        registeredBy: userId || 'dev-albert',
+        cashflowId: cashflowRef.id
+      });
+      
+      // 3. Actualizar historial local
+      setChecklistHistory(prev => prev.map(historyMonth => {
+        if (historyMonth.monthKey === monthKey) {
+          const updatedItems = historyMonth.items.map(item =>
+            item.id === template.id
+              ? {
+                  ...item,
+                  completed: true,
+                  amount,
+                  moneda: 'ARS',
+                  registeredAt: new Date(),
+                  registeredBy: userId || 'dev-albert',
+                  cashflowId: cashflowRef.id
+                }
+              : item
+          );
+          return {
+            ...historyMonth,
+            items: updatedItems,
+            completed: updatedItems.filter(i => i.completed).length,
+            pending: updatedItems.filter(i => !i.completed)
+          };
+        }
+        return historyMonth;
+      }));
+      
+      // 4. Limpiar input
+      setMonthlyExpenseAmounts(prev => ({
+        ...prev,
+        [amountKey]: ''
+      }));
+      
+      setSuccessMessage(`✅ ${template.nombre} de ${monthName} registrado exitosamente`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      console.error('Error paying overdue expense:', err);
+      setError(`Error al registrar ${template.nombre} atrasado.`);
+    }
   };
 
   // --- REPORTS HANDLERS ---
@@ -2520,6 +2669,149 @@ const App = () => {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* Historial de meses anteriores */}
+        <div className="hf-card" style={{maxWidth: '900px', margin: 'var(--hf-space-lg) auto 0'}}>
+          <button
+            type="button"
+            onClick={() => setShowHistory(!showHistory)}
+            className="hf-flex"
+            style={{
+              width: '100%',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'none',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              color: 'var(--hf-text-primary)'
+            }}
+          >
+            <div className="hf-flex" style={{alignItems: 'center', gap: 'var(--hf-space-md)'}}>
+              <h3 style={{margin: 0}}>📅 Historial de Meses Anteriores</h3>
+              {checklistHistory.length > 0 && (
+                <div className="hf-badge hf-badge-warning">
+                  {checklistHistory.reduce((acc, month) => acc + month.pending.length, 0)} pendientes
+                </div>
+              )}
+            </div>
+            <span style={{fontSize: '1.5rem', transition: 'transform 0.2s', transform: showHistory ? 'rotate(180deg)' : 'rotate(0deg)'}}>
+              ▼
+            </span>
+          </button>
+
+          {showHistory && (
+            <div style={{marginTop: 'var(--hf-space-lg)'}}>
+              {historyLoading ? (
+                <div style={{textAlign: 'center', padding: 'var(--hf-space-lg)', color: 'var(--hf-text-secondary)'}}>
+                  <div className="hf-loading" style={{width: '30px', height: '30px', margin: '0 auto'}}></div>
+                  <p style={{marginTop: 'var(--hf-space-sm)'}}>Cargando historial...</p>
+                </div>
+              ) : checklistHistory.length === 0 ? (
+                <p style={{textAlign: 'center', color: 'var(--hf-text-secondary)', padding: 'var(--hf-space-lg)'}}>
+                  No hay historial disponible
+                </p>
+              ) : (
+                checklistHistory.map((monthData, idx) => (
+                  <div 
+                    key={monthData.monthKey}
+                    style={{
+                      marginBottom: idx < checklistHistory.length - 1 ? 'var(--hf-space-xl)' : 0,
+                      paddingBottom: idx < checklistHistory.length - 1 ? 'var(--hf-space-xl)' : 0,
+                      borderBottom: idx < checklistHistory.length - 1 ? '1px solid var(--hf-border)' : 'none'
+                    }}
+                  >
+                    <div className="hf-flex-between" style={{marginBottom: 'var(--hf-space-md)'}}>
+                      <h4 style={{margin: 0, textTransform: 'capitalize'}}>
+                        {monthData.monthName}
+                      </h4>
+                      <div className={`hf-badge ${monthData.pending.length === 0 ? 'hf-badge-success' : 'hf-badge-warning'}`}>
+                        {monthData.completed}/{monthData.total} completados
+                      </div>
+                    </div>
+
+                    {monthData.pending.length > 0 && (
+                      <div 
+                        style={{
+                          background: 'rgba(251, 191, 36, 0.1)',
+                          border: '1px solid rgba(251, 191, 36, 0.3)',
+                          borderRadius: 'var(--hf-radius)',
+                          padding: 'var(--hf-space-md)',
+                          marginBottom: 'var(--hf-space-md)'
+                        }}
+                      >
+                        <div className="hf-flex" style={{alignItems: 'center', gap: 'var(--hf-space-sm)', marginBottom: 'var(--hf-space-sm)'}}>
+                          <span style={{fontSize: '1.25rem'}}>⚠️</span>
+                          <strong style={{color: '#f59e0b'}}>Pagos Pendientes</strong>
+                        </div>
+                        <div className="hf-list" style={{marginTop: 'var(--hf-space-sm)'}}>
+                          {monthData.pending.map(item => (
+                            <div key={item.id} className="hf-list-item">
+                              <div className="hf-flex" style={{alignItems: 'center', gap: 'var(--hf-space-md)', flexWrap: 'wrap', flex: 1}}>
+                                <div style={{minWidth: '24px', fontSize: '1.25rem'}}>❌</div>
+                                <div style={{minWidth: '120px', fontWeight: 600, color: '#f59e0b'}}>
+                                  {item.nombre}
+                                </div>
+                                <div className="hf-flex" style={{gap: 'var(--hf-space-sm)', alignItems: 'center', flex: 1}}>
+                                  <input
+                                    type="number"
+                                    placeholder="Monto"
+                                    value={monthlyExpenseAmounts[`overdue-${monthData.monthKey}-${item.id}`] || ''}
+                                    onChange={(e) => handleMonthlyExpenseAmountChange(`overdue-${monthData.monthKey}-${item.id}`, e.target.value)}
+                                    className="hf-input"
+                                    style={{maxWidth: '150px'}}
+                                    step="0.01"
+                                    min="0"
+                                  />
+                                  <span style={{color: 'var(--hf-text-secondary)'}}>ARS</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePayOverdue(item, monthData.monthKey, monthData.monthName)}
+                                    className="hf-button hf-button-primary"
+                                    style={{padding: '0.5rem 1rem', fontSize: '0.875rem'}}
+                                  >
+                                    Pagar ahora
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {monthData.items.filter(i => i.completed).length > 0 && (
+                      <div>
+                        <p style={{fontSize: '0.875rem', color: 'var(--hf-text-secondary)', marginBottom: 'var(--hf-space-sm)', fontWeight: 600}}>
+                          ✅ Pagados
+                        </p>
+                        <div className="hf-list">
+                          {monthData.items.filter(i => i.completed).map(item => (
+                            <div 
+                              key={item.id} 
+                              className="hf-list-item"
+                              style={{opacity: 0.7}}
+                            >
+                              <div className="hf-flex" style={{alignItems: 'center', gap: 'var(--hf-space-md)', flex: 1}}>
+                                <div style={{minWidth: '24px', fontSize: '1.25rem'}}>✓</div>
+                                <div style={{minWidth: '120px', fontWeight: 500}}>
+                                  {item.nombre}
+                                </div>
+                                <div style={{color: 'var(--hf-text-secondary)', fontSize: '0.875rem'}}>
+                                  {formatCurrency(item.amount, item.moneda)} • {USER_NAMES[item.registeredBy]?.split(' ')[0] || 'Usuario'}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           )}
         </div>

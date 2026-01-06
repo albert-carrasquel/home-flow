@@ -172,32 +172,36 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
 ### ✅ 11. Checklist de Gastos Mensuales ⭐⭐⭐⭐⭐
 **Estado**: ✅ COMPLETADO (2026-01-06)
 **Commit base**: `2ceb75f` (fix: permitir números en símbolos y nombres de activos)
-**Commit final**: `d1fdaaf` (feat: implementar checklist de gastos mensuales)
+**Commit final**: `e8c1845` (feat: agregar botón Modificar y sincronización con últimos registros)
 **Problema**: Gastos recurrentes mensuales requieren carga manual repetitiva cada mes.
-**Solución**: Lista de templates hardcodeados con checklist mensual
+**Solución**: Lista de templates hardcodeados con checklist mensual + historial
 - [x] Templates hardcodeados (7 gastos comunes)
 - [x] UI en tab Gastos/Ingresos con lista mensual
 - [x] Sistema de registro rápido (monto + click)
 - [x] Items se tachan al completar
+- [x] Botón "Modificar" para corregir montos erróneos
+- [x] Sincronización con "Últimos 5 registros"
 - [x] Reset automático al cambiar de mes
 - [x] Estado compartido entre usuarios (Albert y Haydee)
 - [x] Restricción: un gasto solo una vez por mes
+- [x] Historial colapsable de meses anteriores con detección de faltantes
 **Fecha inicio**: 2026-01-06 (tarde)
 **Fecha fin**: 2026-01-06 (tarde)
 **Implementación**:
-- Collection Firestore: `monthly-checklists/{appId}/{YYYY-MM}/{templateId}`
+- Collection Firestore: `monthly-checklist-{YYYY-MM}/{templateId}`
 - Templates: Alquiler, Luz, Gas, Agua, Internet, Expensas, Celular
-- Estados: `monthlyChecklist`, `checklistLoading`, `currentMonth`, `monthlyExpenseAmounts`
+- Estados: `monthlyChecklist`, `checklistLoading`, `currentMonth`, `monthlyExpenseAmounts`, `editingChecklistItem`, `checklistHistory`, `showHistory`
 - useEffect: Detecta cambio de mes cada minuto y resetea automáticamente
-- UI: Sección arriba del formulario de gastos con diseño limpio
-- Cada item muestra: 
-  - Pendiente: ☐ + nombre + input monto + botón [Registrar]
-  - Completado: ✓ + nombre + monto + usuario + fecha (tachado)
-- Badge: "X/7 completados" en título
-- Handler `handleRegisterMonthlyExpense`: 
-  - Crea cashflow normal con todos los campos
-  - Marca en checklist con referencia al cashflow
-  - Actualiza estado local inmediatamente
+- UI Mes actual: Lista con items pendientes/completados
+- UI Historial: Sección colapsable con últimos 3 meses
+  - Detecta pagos faltantes automáticamente
+  - Permite pagar atrasados con botón "Pagar ahora"
+  - Badge con contador de pendientes totales
+- Handlers:
+  - `handleRegisterMonthlyExpense`: Registra gasto del mes actual
+  - `handleEditMonthlyExpense`: Activa modo edición
+  - `handleUpdateMonthlyExpense`: Actualiza monto en cashflow y checklist
+  - `handlePayOverdue`: Registra pago atrasado de mes anterior
 - Validación: monto > 0, no permite duplicados en el mismo mes
 
 ---
