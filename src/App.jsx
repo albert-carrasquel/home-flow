@@ -1547,6 +1547,30 @@ const App = () => {
     }));
   };
 
+  const handleRemoveFromChecklist = async (template) => {
+    if (!db) return;
+    
+    try {
+      // 1. Eliminar el documento del checklist en Firestore
+      const checklistPath = getMonthlyChecklistPath(appId, currentMonth);
+      const checklistDocId = `${currentMonth}-${template.id}`;
+      await deleteDoc(doc(db, checklistPath, checklistDocId));
+      
+      // 2. Actualizar estado local
+      setMonthlyChecklist(prev => prev.map(item =>
+        item.id === template.id
+          ? { ...item, completed: false, amount: null, moneda: 'ARS', registeredAt: null, registeredBy: null, cashflowId: null }
+          : item
+      ));
+      
+      setSuccessMessage(`✅ ${template.nombre} desmarcado exitosamente`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      console.error('Error removing from checklist:', err);
+      setError(`Error al desmarcar ${template.nombre}.`);
+    }
+  };
+
   const handlePayOverdue = async (template, monthKey, monthName) => {
     const amountKey = `overdue-${monthKey}-${template.id}`;
     const amount = parseFloat(monthlyExpenseAmounts[amountKey]);
@@ -2710,14 +2734,25 @@ const App = () => {
                           <div style={{color: 'var(--hf-text-secondary)', fontSize: '0.875rem'}}>
                             {formatCurrency(item.amount, item.moneda)} • {USER_NAMES[item.registeredBy]?.split(' ')[0] || 'Usuario'} • {item.registeredAt?.toDate ? item.registeredAt.toDate().toLocaleDateString('es-ES') : 'Hoy'}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleEditMonthlyExpense(item)}
-                            className="hf-button"
-                            style={{padding: '0.35rem 0.75rem', fontSize: '0.8rem'}}
-                          >
-                            ✏️ Modificar
-                          </button>
+                          <div className="hf-flex" style={{gap: 'var(--hf-space-sm)'}}>
+                            <button
+                              type="button"
+                              onClick={() => handleEditMonthlyExpense(item)}
+                              className="hf-button"
+                              style={{padding: '0.35rem 0.75rem', fontSize: '0.8rem'}}
+                            >
+                              ✏️ Modificar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveFromChecklist(item)}
+                              className="hf-button"
+                              style={{padding: '0.35rem 0.75rem', fontSize: '0.8rem', color: '#ef4444'}}
+                              title="Desmarcar este gasto del checklist"
+                            >
+                              🗑️ Desmarcar
+                            </button>
+                          </div>
                         </div>
                       )
                     ) : (
