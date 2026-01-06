@@ -9,7 +9,8 @@ const Dashboard = ({
   dashboardLoading, 
   onNavigate,
   isSuperAdmin,
-  onMassDelete
+  onMassDelete,
+  onLogout
 }) => {
   if (dashboardLoading) {
     return (
@@ -49,6 +50,9 @@ const Dashboard = ({
           </button>
           <button className="hf-button hf-button-secondary" onClick={() => onNavigate('reportes')}>
             <span>📊 Reportes</span>
+          </button>
+          <button className="hf-button hf-button-ghost" onClick={onLogout} style={{marginLeft: 'var(--hf-space-md)'}}>
+            <span>🚪 Cerrar Sesión</span>
           </button>
         </div>
       </div>

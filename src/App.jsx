@@ -7,6 +7,9 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   signOut,
+  onAuthStateChanged,
+  setPersistence,
+  browserSessionPersistence,
 } from 'firebase/auth';
 import {
   getFirestore,
@@ -418,6 +421,15 @@ const App = () => {
     const firestore = getFirestore(app);
     const firebaseAuth = getAuth(app);
 
+    // Desactivar persistencia: cierra sesión al cerrar pestaña/navegador
+    setPersistence(firebaseAuth, browserSessionPersistence)
+      .then(() => {
+        console.log('🔒 Persistencia de sesión desactivada - se requiere login cada vez');
+      })
+      .catch((error) => {
+        console.error('Error configurando persistencia:', error);
+      });
+
     setLogLevel('debug');
     // Defer state updates to avoid synchronous setState within effect
     setTimeout(() => {
@@ -439,6 +451,47 @@ const App = () => {
       }, 0);
     }
   }, []);
+
+  // 1.5. Listener de autenticación de Firebase
+  useEffect(() => {
+    if (!auth || DEV_BYPASS_AUTH) return;
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // Usuario autenticado
+        const uid = user.uid;
+        console.log('🔐 Usuario autenticado:', {
+          uid: uid,
+          email: user.email,
+          displayName: user.displayName
+        });
+        setUserId(uid);
+        
+        // Verificar si es super admin
+        if (SUPER_ADMINS.includes(uid)) {
+          console.log('✅ Usuario autorizado como Super Admin');
+          setIsSuperAdmin(true);
+          setShowLogin(false);
+          setLoginError(null);
+        } else {
+          // Usuario no autorizado
+          console.log('❌ UID no encontrado en SUPER_ADMINS:', SUPER_ADMINS);
+          setIsSuperAdmin(false);
+          setLoginError(`Acceso denegado. Tu UID es: ${uid}. Contacta al administrador para agregar este UID a la lista de usuarios permitidos.`);
+        }
+      } else {
+        // Usuario no autenticado
+        setUserId(null);
+        setUserName('');
+        setIsSuperAdmin(false);
+        setShowLogin(true);
+      }
+      
+      setIsAuthReady(true);
+    });
+
+    return () => unsubscribe();
+  }, [auth]);
 
 
   // 2. Suscripción en tiempo real a las transacciones
@@ -1824,18 +1877,14 @@ const App = () => {
     try {
       if (google) {
         const provider = new GoogleAuthProvider();
-        const userCredential = await signInWithPopup(auth, provider);
-        setUserId(userCredential.user.uid);
+        await signInWithPopup(auth, provider);
+        // onAuthStateChanged se encargará de verificar permisos y actualizar el estado
       } else {
-        const userCredential = await signInWithEmailAndPassword(
-          auth,
-          email,
-          password,
-        );
-        setUserId(userCredential.user.uid);
+        await signInWithEmailAndPassword(auth, email, password);
+        // onAuthStateChanged se encargará de verificar permisos y actualizar el estado
       }
-      setShowLogin(false);
     } catch (e) {
+      console.error('Login error:', e);
       setLoginError(e.message);
     }
   };
@@ -1921,6 +1970,7 @@ const App = () => {
         onNavigate={setTab}
         isSuperAdmin={isSuperAdmin}
         onMassDelete={handleShowMassDelete}
+        onLogout={handleLogout}
       />
     );
   } else if (tab === 'portfolio') {
