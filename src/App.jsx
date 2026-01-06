@@ -793,7 +793,7 @@ const App = () => {
   // 7. Monthly Checklist - Cargar y detectar cambio de mes
   useEffect(() => {
     if (!db || !isAuthReady) {
-      console.log('Monthly checklist: waiting for db/auth...', { db: !!db, isAuthReady });
+      // console.log('Monthly checklist: waiting for db/auth...', { db: !!db, isAuthReady });
       return;
     }
 
