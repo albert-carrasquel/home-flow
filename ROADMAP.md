@@ -169,11 +169,34 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
 - [ ] Barra de búsqueda global (por activo, descripción, monto)
 - [ ] Filtros persistentes (guardar búsquedas favoritas)
 
-### 11. Transacciones Recurrentes
+### ✅ 11. Checklist de Gastos Mensuales ⭐⭐⭐⭐⭐
+**Estado**: 🚧 EN DESARROLLO (Iniciado: 2026-01-06)
+**Commit base**: `2ceb75f` (fix: permitir números en símbolos y nombres de activos)
+**Problema**: Gastos recurrentes mensuales requieren carga manual repetitiva cada mes.
+**Solución**: Lista de templates hardcodeados con checklist mensual
+- [x] Templates hardcodeados (7 gastos comunes)
+- [ ] UI en tab Gastos/Ingresos con lista mensual
+- [ ] Sistema de registro rápido (monto + click)
+- [ ] Items se tachan al completar
+- [ ] Reset automático al cambiar de mes
+- [ ] Estado compartido entre usuarios (Albert y Haydee)
+- [ ] Restricción: un gasto solo una vez por mes
+**Implementación Planificada**:
+- Collection Firestore: `monthly-checklists/{appId}/{YYYY-MM}/{templateId}`
+- Templates: Alquiler, Luz, Gas, Agua, Internet, Expensas, Celular
+- Estados: `monthlyChecklist`, `checklistLoading`, `currentMonth`
+- useEffect: Detecta cambio de mes y resetea automáticamente
+- UI: Sección colapsable arriba del formulario de gastos
+- Cada item muestra: ☐/✓, nombre, input monto, botón [Registrar]
+- Items completados: tachados con monto, usuario y fecha
+- Badge: "4/7 completados" en título
+
+### 12. Transacciones Recurrentes Avanzadas
 **Estado**: ⏳ PENDIENTE
-- [ ] Template para gastos fijos (alquiler, servicios)
+- [ ] Configuración de templates personalizada
 - [ ] Programar ingresos mensuales (sueldo)
 - [ ] Un clic para duplicar última transacción
+- [ ] Sugerir montos del mes anterior
 
 ---
 
