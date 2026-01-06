@@ -7,7 +7,9 @@ const Dashboard = ({
   userName, 
   dashboardData, 
   dashboardLoading, 
-  onNavigate 
+  onNavigate,
+  isSuperAdmin,
+  onMassDelete
 }) => {
   if (dashboardLoading) {
     return (
@@ -190,6 +192,36 @@ const Dashboard = ({
           </button>
         </div>
       </div>
+
+      {/* Super Admin - Danger Zone */}
+      {isSuperAdmin && onMassDelete && (
+        <div className="hf-card" style={{marginTop: 'var(--hf-space-lg)', borderColor: 'var(--hf-danger)'}}>
+          <h3 className="text-lg font-semibold mb-4" style={{color: 'var(--hf-danger)'}}>⚠️ Zona de Peligro (Super Admin)</h3>
+          <p style={{marginBottom: 'var(--hf-space-md)', color: 'var(--hf-text-secondary)'}}>
+            Estas acciones son irreversibles y eliminarán datos de forma permanente.
+          </p>
+          <div className="hf-flex hf-gap-md" style={{flexWrap: 'wrap'}}>
+            <button 
+              className="hf-button hf-button-danger" 
+              onClick={() => onMassDelete('all-transactions')}
+            >
+              🗑️ Eliminar Todas las Inversiones
+            </button>
+            <button 
+              className="hf-button hf-button-danger" 
+              onClick={() => onMassDelete('all-cashflow')}
+            >
+              🗑️ Eliminar Todos los Gastos/Ingresos
+            </button>
+            <button 
+              className="hf-button hf-button-danger" 
+              onClick={() => onMassDelete('everything')}
+            >
+              💥 Eliminar TODO
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

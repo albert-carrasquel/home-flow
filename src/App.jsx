@@ -666,28 +666,26 @@ const App = () => {
           : 0;
 
         setDashboardData({
-          investments: {
-            totalInvertido: totalInvertidoGeneral,
-            totalRecuperado: totalRecuperado,
-            pnlNeto: pnlNetoCerradas,
-            pnlPct: pnlPctCerradas,
-            posicionesAbiertas: pnlReport.posicionesAbiertas.length,
-          },
-          cashflow: {
-            totalGastos,
-            totalIngresos,
-            neto: totalIngresos - totalGastos,
-            mes: now.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }),
-          },
+          // Métricas de inversiones (nivel superior para Dashboard)
+          totalInvertido: totalInvertidoGeneral,
+          totalRecuperado: totalRecuperado,
+          plRealizado: pnlNetoCerradas,
+          plPct: pnlPctCerradas,
+          posicionesAbiertas: pnlReport.posicionesAbiertas.length,
+          // Métricas de cashflow (nivel superior para Dashboard)
+          totalGastos,
+          totalIngresos,
+          balance: totalIngresos - totalGastos,
+          mes: now.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }),
+          // Datos adicionales
           topAssets: sortedAssets,
-          categoryBreakdown: Object.entries(categorySummary)
+          topCategories: Object.entries(categorySummary)
             .map(([categoria, data]) => ({
               categoria,
-              gastos: data.gastos,
-              ingresos: data.ingresos,
-              neto: data.ingresos - data.gastos,
+              monto: data.gastos,
+              count: data.count || 0,
             }))
-            .sort((a, b) => Math.abs(b.gastos) - Math.abs(a.gastos))
+            .sort((a, b) => Math.abs(b.monto) - Math.abs(a.monto))
             .slice(0, 5),
           monthlyTrend: monthlyData,
         });
@@ -1890,6 +1888,8 @@ const App = () => {
         dashboardData={dashboardData}
         dashboardLoading={dashboardLoading}
         onNavigate={setTab}
+        isSuperAdmin={isSuperAdmin}
+        onMassDelete={handleShowMassDelete}
       />
     );
   } else if (tab === 'portfolio') {
