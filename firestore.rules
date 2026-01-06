@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Función helper para verificar autenticación
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Función para verificar si es un super admin
+    function isSuperAdmin() {
+      return request.auth != null && 
+             (request.auth.uid == '9dZMQNvgovSWE4lP7tOUNDzy6Md2' || 
+              request.auth.uid == 'T0Kh0eHZ05he8iqD6vEG2G2c7Rl2');
+    }
+    
+    // Reglas para la aplicación HomeFlow
+    // Todos los datos están en artifacts/{appId}/public/data/
+    match /artifacts/{appId}/public/data/{document=**} {
+      // Solo usuarios autenticados pueden leer y escribir
+      // Para mayor seguridad, solo super admins tienen acceso
+      allow read, write: if isSuperAdmin();
+      
+      // Alternativa más permisiva (permitir a cualquier usuario autenticado):
+      // allow read, write: if isAuthenticated();
+    }
+    
+    // Denegar todo lo demás por defecto
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
