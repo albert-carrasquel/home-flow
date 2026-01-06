@@ -433,6 +433,7 @@ const App = () => {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
   const [monthlyExpenseAmounts, setMonthlyExpenseAmounts] = useState({});
+  const [editingChecklistItem, setEditingChecklistItem] = useState(null);
 
 
   // 1. Inicialización de Firebase (y bypass de auth en DEV)
@@ -1285,6 +1286,7 @@ const App = () => {
     try {
       // 1. Crear el registro de cashflow normal
       const cashflowPath = getCashflowCollectionPath(appId);
+      const now = new Date();
       const cashflowData = {
         tipo: 'gasto',
         categoria: template.categoria,
@@ -1293,7 +1295,8 @@ const App = () => {
         moneda: 'ARS',
         medioPago: 'Transferencia', // Default
         usuarioId: userId || 'dev-albert',
-        fechaOperacion: dateStringToTimestamp(new Date().toISOString().split('T')[0]),
+        fechaOperacion: dateStringToTimestamp(now.toISOString().split('T')[0]),
+        timestamp: serverTimestamp(), // Para que aparezca en "Últimos 5 registros"
         createdAt: serverTimestamp(),
         anulada: false
       };
@@ -1342,6 +1345,69 @@ const App = () => {
       console.error('Error registering monthly expense:', err);
       setError(`Error al registrar ${template.nombre}.`);
     }
+  };
+
+  const handleEditMonthlyExpense = (item) => {
+    setEditingChecklistItem(item.id);
+    setMonthlyExpenseAmounts(prev => ({
+      ...prev,
+      [item.id]: item.amount.toString()
+    }));
+  };
+
+  const handleUpdateMonthlyExpense = async (template) => {
+    const newAmount = parseFloat(monthlyExpenseAmounts[template.id]);
+    
+    if (!newAmount || newAmount <= 0) {
+      setError('Ingresa un monto válido mayor a 0');
+      return;
+    }
+    
+    if (!db || !template.cashflowId) return;
+    
+    try {
+      // 1. Actualizar el cashflow existente
+      const cashflowPath = getCashflowCollectionPath(appId);
+      const cashflowRef = doc(db, cashflowPath, template.cashflowId);
+      await updateDoc(cashflowRef, {
+        monto: newAmount
+      });
+      
+      // 2. Actualizar el checklist
+      const checklistPath = getMonthlyChecklistPath(appId, currentMonth);
+      const checklistDocId = `${currentMonth}-${template.id}`;
+      await updateDoc(doc(db, checklistPath, checklistDocId), {
+        amount: newAmount
+      });
+      
+      // 3. Actualizar estado local
+      setMonthlyChecklist(prev => prev.map(item =>
+        item.id === template.id
+          ? { ...item, amount: newAmount }
+          : item
+      ));
+      
+      // 4. Salir del modo edición
+      setEditingChecklistItem(null);
+      setMonthlyExpenseAmounts(prev => ({
+        ...prev,
+        [template.id]: ''
+      }));
+      
+      setSuccessMessage(`✅ ${template.nombre} actualizado exitosamente`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (err) {
+      console.error('Error updating monthly expense:', err);
+      setError(`Error al actualizar ${template.nombre}.`);
+    }
+  };
+
+  const handleCancelEdit = (itemId) => {
+    setEditingChecklistItem(null);
+    setMonthlyExpenseAmounts(prev => ({
+      ...prev,
+      [itemId]: ''
+    }));
   };
 
   // --- REPORTS HANDLERS ---
@@ -2383,9 +2449,51 @@ const App = () => {
                       {item.nombre}
                     </div>
                     {item.completed ? (
-                      <div style={{flex: 1, color: 'var(--hf-text-secondary)', fontSize: '0.875rem'}}>
-                        {formatCurrency(item.amount, item.moneda)} • {USER_NAMES[item.registeredBy]?.split(' ')[0] || 'Usuario'} • {item.registeredAt?.toDate ? item.registeredAt.toDate().toLocaleDateString('es-ES') : 'Hoy'}
-                      </div>
+                      editingChecklistItem === item.id ? (
+                        <div className="hf-flex" style={{gap: 'var(--hf-space-sm)', alignItems: 'center', flex: 1}}>
+                          <input
+                            type="number"
+                            placeholder="Nuevo monto"
+                            value={monthlyExpenseAmounts[item.id] || ''}
+                            onChange={(e) => handleMonthlyExpenseAmountChange(item.id, e.target.value)}
+                            className="hf-input"
+                            style={{maxWidth: '150px'}}
+                            step="0.01"
+                            min="0"
+                          />
+                          <span style={{color: 'var(--hf-text-secondary)'}}>ARS</span>
+                          <button
+                            type="button"
+                            onClick={() => handleUpdateMonthlyExpense(item)}
+                            className="hf-button hf-button-primary"
+                            style={{padding: '0.5rem 1rem', fontSize: '0.875rem'}}
+                          >
+                            Guardar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleCancelEdit(item.id)}
+                            className="hf-button"
+                            style={{padding: '0.5rem 1rem', fontSize: '0.875rem'}}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="hf-flex" style={{alignItems: 'center', gap: 'var(--hf-space-md)', flex: 1, justifyContent: 'space-between'}}>
+                          <div style={{color: 'var(--hf-text-secondary)', fontSize: '0.875rem'}}>
+                            {formatCurrency(item.amount, item.moneda)} • {USER_NAMES[item.registeredBy]?.split(' ')[0] || 'Usuario'} • {item.registeredAt?.toDate ? item.registeredAt.toDate().toLocaleDateString('es-ES') : 'Hoy'}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleEditMonthlyExpense(item)}
+                            className="hf-button"
+                            style={{padding: '0.35rem 0.75rem', fontSize: '0.8rem'}}
+                          >
+                            ✏️ Modificar
+                          </button>
+                        </div>
+                      )
                     ) : (
                       <div className="hf-flex" style={{gap: 'var(--hf-space-sm)', alignItems: 'center', flex: 1}}>
                         <input
