@@ -826,7 +826,10 @@ const App = () => {
 
   // 7. Monthly Checklist - Cargar y detectar cambio de mes
   useEffect(() => {
-    if (!db) return;
+    if (!db) {
+      console.log('Monthly checklist: db not ready yet');
+      return;
+    }
 
     const loadMonthlyChecklist = async () => {
       try {
@@ -836,12 +839,18 @@ const App = () => {
         const now = new Date();
         const detectedMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         
+        console.log('Loading monthly checklist for:', detectedMonth);
+        console.log('Current month state:', currentMonth);
+        
         if (detectedMonth !== currentMonth) {
           setCurrentMonth(detectedMonth);
         }
         
         const checklistPath = getMonthlyChecklistPath(appId, detectedMonth);
+        console.log('Checklist path:', checklistPath);
+        
         const checklistSnapshot = await getDocs(collection(db, checklistPath));
+        console.log('Checklist documents found:', checklistSnapshot.size);
         
         const checklistMap = {};
         checklistSnapshot.docs.forEach(doc => {
@@ -851,6 +860,9 @@ const App = () => {
             id: doc.id
           };
         });
+        
+        console.log('Checklist map:', checklistMap);
+        console.log('Templates to merge:', MONTHLY_EXPENSE_TEMPLATES);
         
         // Merge templates con estado del checklist
         const checklistWithStatus = MONTHLY_EXPENSE_TEMPLATES.map(template => ({
@@ -863,6 +875,7 @@ const App = () => {
           cashflowId: checklistMap[template.id]?.cashflowId || null
         }));
         
+        console.log('Final checklist with status:', checklistWithStatus);
         setMonthlyChecklist(checklistWithStatus);
       } catch (err) {
         console.error('Error loading monthly checklist:', err);
