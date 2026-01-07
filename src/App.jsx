@@ -675,10 +675,32 @@ const App = () => {
         const totalGastos = gastos.reduce((sum, cf) => sum + (cf.monto || 0), 0);
         const totalIngresos = ingresos.reduce((sum, cf) => sum + (cf.monto || 0), 0);
 
-        // 4. Get top 5 performing assets (by P&L %)
-        const sortedAssets = [...pnlReport.porActivo]
-          .sort((a, b) => b.pnlPct - a.pnlPct)
-          .slice(0, 5);
+        // 4. Get top 5 assets (prioritize open positions by amount invested, then closed by P&L %)
+        const openPositionsFormatted = pnlReport.posicionesAbiertas.map(pos => ({
+          activo: pos.activo,
+          nombreActivo: pos.nombreActivo,
+          moneda: pos.moneda,
+          tipo: `${pos.tipoActivo || 'N/A'} (Posición Abierta)`,
+          pl: pos.montoInvertido, // Use invested amount as "value" for open positions
+          sortValue: pos.montoInvertido,
+          isOpen: true
+        }));
+        
+        const closedAssetsFormatted = pnlReport.porActivo.map(asset => ({
+          activo: asset.activo,
+          nombreActivo: asset.nombreActivo,
+          moneda: asset.moneda,
+          tipo: `${asset.tipoActivo || 'N/A'} (P&L: ${asset.pnlPct.toFixed(2)}%)`,
+          pl: asset.pnlNeto, // Actual P&L for closed positions
+          sortValue: Math.abs(asset.pnlNeto), // Sort by absolute P&L
+          isOpen: false
+        }));
+        
+        // Combine and sort: open positions by amount, then closed by absolute P&L
+        const sortedAssets = [
+          ...openPositionsFormatted.sort((a, b) => b.sortValue - a.sortValue),
+          ...closedAssetsFormatted.sort((a, b) => b.sortValue - a.sortValue)
+        ].slice(0, 5);
 
         // 5. Get cashflow by category (current month)
         const categorySummary = {};

@@ -129,7 +129,7 @@ const Dashboard = ({
       <div className="hf-grid-2col" style={{marginBottom: 'var(--hf-space-lg)'}}>
         {/* Top Assets */}
         <div className="hf-card">
-          <h3 className="text-lg font-semibold mb-4 hf-text-gradient">🏆 Top 5 Activos (P&L)</h3>
+          <h3 className="text-lg font-semibold mb-4 hf-text-gradient">🏆 Top 5 Activos</h3>
           {dashboardData.topAssets && dashboardData.topAssets.length > 0 ? (
             <div className="hf-list">
               {dashboardData.topAssets.map((asset, idx) => (
@@ -139,7 +139,7 @@ const Dashboard = ({
                       <div style={{fontWeight: '500'}}>{asset.activo}</div>
                       <div style={{fontSize: '0.875rem', color: 'var(--hf-text-secondary)'}}>{asset.tipo}</div>
                     </div>
-                    <div style={{textAlign: 'right', fontWeight: '600', color: asset.pl >= 0 ? 'var(--hf-success)' : 'var(--hf-danger)'}}>
+                    <div style={{textAlign: 'right', fontWeight: '600', color: asset.isOpen ? 'var(--hf-primary)' : (asset.pl >= 0 ? 'var(--hf-success)' : 'var(--hf-danger)')}}>
                       {formatCurrency(asset.pl, asset.moneda)}
                     </div>
                   </div>
