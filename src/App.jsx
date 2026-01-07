@@ -502,7 +502,7 @@ const App = () => {
 
   // 2. Suscripción en tiempo real a las transacciones
   useEffect(() => {
-    if (!isAuthReady || !db || !userId) return;
+    if (!isAuthReady || !db || !userId || !isSuperAdmin) return;
 
     const transactionsPath = getTransactionsPath(appId);
 
@@ -540,11 +540,11 @@ const App = () => {
     );
 
     return () => unsubscribe();
-  }, [db, userId, isAuthReady]);
+  }, [db, userId, isAuthReady, isSuperAdmin]);
 
   // 3. Suscripción en tiempo real a los últimos 5 cashflow (gastos/ingresos)
   useEffect(() => {
-    if (!isAuthReady || !db) return;
+    if (!isAuthReady || !db || !isSuperAdmin) return;
 
     const cashflowPath = getCashflowPath(appId);
 
@@ -603,7 +603,7 @@ const App = () => {
     });
 
     return () => unsubscribe();
-  }, [db, isAuthReady]);
+  }, [db, isAuthReady, isSuperAdmin]);
 
   // Build a unique list of activos (optionally filtered by usuarioId from the form)
   useEffect(() => {
@@ -618,7 +618,7 @@ const App = () => {
 
   // Calculate Dashboard data whenever transactions or cashflows change
   useEffect(() => {
-    if (!db || !isAuthReady) {
+    if (!db || !isAuthReady || !isSuperAdmin) {
       setDashboardLoading(true);
       return;
     }
@@ -764,11 +764,11 @@ const App = () => {
     };
 
     calculateDashboard();
-  }, [db, isAuthReady, _transactions, cashflows]);
+  }, [db, isAuthReady, isSuperAdmin, _transactions, cashflows]);
 
   // Calculate Portfolio data whenever transactions change
   useEffect(() => {
-    if (!db || !isAuthReady) {
+    if (!db || !isAuthReady || !isSuperAdmin) {
       setPortfolioLoading(true);
       return;
     }
@@ -855,11 +855,11 @@ const App = () => {
     };
 
     calculatePortfolio();
-  }, [db, isAuthReady, _transactions]);
+  }, [db, isAuthReady, isSuperAdmin, _transactions]);
 
   // 7. Monthly Checklist - Cargar y detectar cambio de mes
   useEffect(() => {
-    if (!db || !isAuthReady) {
+    if (!db || !isAuthReady || !isSuperAdmin) {
       // console.log('Monthly checklist: waiting for db/auth...', { db: !!db, isAuthReady });
       return;
     }
@@ -990,7 +990,7 @@ const App = () => {
     }, 60000); // Check every minute
     
     return () => clearInterval(interval);
-  }, [db, isAuthReady, appId]);
+  }, [db, isAuthReady, isSuperAdmin, appId]);
 
   // (Metrics and super-admin derivation are simplified/disabled for now)
 
