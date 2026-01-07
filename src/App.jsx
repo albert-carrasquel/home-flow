@@ -376,7 +376,7 @@ const App = () => {
   const [showAnnulTransactionModal, setShowAnnulTransactionModal] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(!!DEV_BYPASS_AUTH);
   const [loginError, setLoginError] = useState(null);
-  const [showLogin, setShowLogin] = useState(true);
+  const [showLogin, setShowLogin] = useState(!DEV_BYPASS_AUTH ? false : false);
   // Mostrar nombre de usuario en vez de UID
   const [userName, setUserName] = useState(DEV_BYPASS_AUTH ? 'Dev Mode' : '');
 
@@ -465,19 +465,25 @@ const App = () => {
           email: user.email,
           displayName: user.displayName
         });
-        setUserId(uid);
         
         // Verificar si es super admin
         if (SUPER_ADMINS.includes(uid)) {
           console.log('✅ Usuario autorizado como Super Admin');
+          setUserId(uid);
           setIsSuperAdmin(true);
           setShowLogin(false);
           setLoginError(null);
         } else {
-          // Usuario no autorizado
+          // Usuario no autorizado - cerrar sesión automáticamente
           console.log('❌ UID no encontrado en SUPER_ADMINS:', SUPER_ADMINS);
-          setIsSuperAdmin(false);
-          setLoginError(`Acceso denegado. Tu UID es: ${uid}. Contacta al administrador para agregar este UID a la lista de usuarios permitidos.`);
+          console.log('⚠️ Cerrando sesión de usuario no autorizado...');
+          signOut(auth).then(() => {
+            setUserId(null);
+            setUserName('');
+            setIsSuperAdmin(false);
+            setShowLogin(true);
+            setLoginError(`Acceso denegado. Tu UID es: ${uid}. Contacta al administrador para agregar este UID a la lista de usuarios permitidos.`);
+          });
         }
       } else {
         // Usuario no autenticado
@@ -3018,8 +3024,8 @@ const App = () => {
     );
   }
 
-  // Mostrar login si no está autenticado
-  if (!DEV_BYPASS_AUTH && showLogin && isAuthReady && !userId) {
+  // Mostrar login si no está autenticado o aún no se verificó autenticación
+  if (!DEV_BYPASS_AUTH && (showLogin || !isAuthReady)) {
     return <LoginForm onLogin={handleLogin} error={loginError} />;
   }
 
