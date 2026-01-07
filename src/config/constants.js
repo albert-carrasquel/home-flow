@@ -1,7 +1,7 @@
 // --- DEV FLAGS ---
-// TODO: Remove or properly handle in production
-export const DEV_BYPASS_AUTH = true;
-export const DEV_USER_ID = 'dev-albert';
+// Modo desarrollo desactivado - Usando autenticación real de Firebase
+export const DEV_BYPASS_AUTH = false;
+export const DEV_USER_ID = 'dev-albert'; // Solo se usa si DEV_BYPASS_AUTH = true
 
 // --- SUPER ADMINS ---
 // UIDs de los super admins permitidos

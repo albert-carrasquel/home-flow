@@ -6,6 +6,10 @@ import {
   signInWithEmailAndPassword,
   GoogleAuthProvider,
   signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  setPersistence,
+  browserSessionPersistence,
 } from 'firebase/auth';
 import {
   getFirestore,
@@ -372,7 +376,7 @@ const App = () => {
   const [showAnnulTransactionModal, setShowAnnulTransactionModal] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(!!DEV_BYPASS_AUTH);
   const [loginError, setLoginError] = useState(null);
-  const [showLogin, setShowLogin] = useState(true);
+  const [showLogin, setShowLogin] = useState(!DEV_BYPASS_AUTH ? false : false);
   // Mostrar nombre de usuario en vez de UID
   const [userName, setUserName] = useState(DEV_BYPASS_AUTH ? 'Dev Mode' : '');
 
@@ -417,6 +421,15 @@ const App = () => {
     const firestore = getFirestore(app);
     const firebaseAuth = getAuth(app);
 
+    // Desactivar persistencia: cierra sesión al cerrar pestaña/navegador
+    setPersistence(firebaseAuth, browserSessionPersistence)
+      .then(() => {
+        console.log('🔒 Persistencia de sesión desactivada - se requiere login cada vez');
+      })
+      .catch((error) => {
+        console.error('Error configurando persistencia:', error);
+      });
+
     setLogLevel('debug');
     // Defer state updates to avoid synchronous setState within effect
     setTimeout(() => {
@@ -439,10 +452,57 @@ const App = () => {
     }
   }, []);
 
+  // 1.5. Listener de autenticación de Firebase
+  useEffect(() => {
+    if (!auth || DEV_BYPASS_AUTH) return;
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // Usuario autenticado
+        const uid = user.uid;
+        console.log('🔐 Usuario autenticado:', {
+          uid: uid,
+          email: user.email,
+          displayName: user.displayName
+        });
+        
+        // Verificar si es super admin
+        if (SUPER_ADMINS.includes(uid)) {
+          console.log('✅ Usuario autorizado como Super Admin');
+          setUserId(uid);
+          setIsSuperAdmin(true);
+          setShowLogin(false);
+          setLoginError(null);
+        } else {
+          // Usuario no autorizado - cerrar sesión automáticamente
+          console.log('❌ UID no encontrado en SUPER_ADMINS:', SUPER_ADMINS);
+          console.log('⚠️ Cerrando sesión de usuario no autorizado...');
+          signOut(auth).then(() => {
+            setUserId(null);
+            setUserName('');
+            setIsSuperAdmin(false);
+            setShowLogin(true);
+            setLoginError(`Acceso denegado. Tu UID es: ${uid}. Contacta al administrador para agregar este UID a la lista de usuarios permitidos.`);
+          });
+        }
+      } else {
+        // Usuario no autenticado
+        setUserId(null);
+        setUserName('');
+        setIsSuperAdmin(false);
+        setShowLogin(true);
+      }
+      
+      setIsAuthReady(true);
+    });
+
+    return () => unsubscribe();
+  }, [auth]);
+
 
   // 2. Suscripción en tiempo real a las transacciones
   useEffect(() => {
-    if (!isAuthReady || !db || !userId) return;
+    if (!isAuthReady || !db || !userId || !isSuperAdmin) return;
 
     const transactionsPath = getTransactionsPath(appId);
 
@@ -480,11 +540,11 @@ const App = () => {
     );
 
     return () => unsubscribe();
-  }, [db, userId, isAuthReady]);
+  }, [db, userId, isAuthReady, isSuperAdmin]);
 
   // 3. Suscripción en tiempo real a los últimos 5 cashflow (gastos/ingresos)
   useEffect(() => {
-    if (!isAuthReady || !db) return;
+    if (!isAuthReady || !db || !isSuperAdmin) return;
 
     const cashflowPath = getCashflowPath(appId);
 
@@ -520,7 +580,14 @@ const App = () => {
         setCashflows(items.slice(0, 5));
       } catch (e) {
         console.error('Error refreshing cashflows:', e);
-        setError('Error fetching cashflow: Problema de red o configuración.');
+        // Mostrar error más detallado
+        let errorMsg = 'Error cargando gastos/ingresos';
+        if (e.code === 'permission-denied') {
+          errorMsg = 'Acceso denegado a Firestore. Verifica que estés autenticado y tengas permisos.';
+        } else if (e.message) {
+          errorMsg = `Error: ${e.message}`;
+        }
+        setError(errorMsg);
       }
     };
 
@@ -536,7 +603,7 @@ const App = () => {
     });
 
     return () => unsubscribe();
-  }, [db, isAuthReady]);
+  }, [db, isAuthReady, isSuperAdmin]);
 
   // Build a unique list of activos (optionally filtered by usuarioId from the form)
   useEffect(() => {
@@ -551,7 +618,7 @@ const App = () => {
 
   // Calculate Dashboard data whenever transactions or cashflows change
   useEffect(() => {
-    if (!db || !isAuthReady) {
+    if (!db || !isAuthReady || !isSuperAdmin) {
       setDashboardLoading(true);
       return;
     }
@@ -697,11 +764,11 @@ const App = () => {
     };
 
     calculateDashboard();
-  }, [db, isAuthReady, _transactions, cashflows]);
+  }, [db, isAuthReady, isSuperAdmin, _transactions, cashflows]);
 
   // Calculate Portfolio data whenever transactions change
   useEffect(() => {
-    if (!db || !isAuthReady) {
+    if (!db || !isAuthReady || !isSuperAdmin) {
       setPortfolioLoading(true);
       return;
     }
@@ -788,12 +855,12 @@ const App = () => {
     };
 
     calculatePortfolio();
-  }, [db, isAuthReady, _transactions]);
+  }, [db, isAuthReady, isSuperAdmin, _transactions]);
 
   // 7. Monthly Checklist - Cargar y detectar cambio de mes
   useEffect(() => {
-    if (!db || !isAuthReady) {
-      console.log('Monthly checklist: waiting for db/auth...', { db: !!db, isAuthReady });
+    if (!db || !isAuthReady || !isSuperAdmin) {
+      // console.log('Monthly checklist: waiting for db/auth...', { db: !!db, isAuthReady });
       return;
     }
 
@@ -923,7 +990,7 @@ const App = () => {
     }, 60000); // Check every minute
     
     return () => clearInterval(interval);
-  }, [db, isAuthReady, appId]);
+  }, [db, isAuthReady, isSuperAdmin, appId]);
 
   // (Metrics and super-admin derivation are simplified/disabled for now)
 
@@ -1816,19 +1883,29 @@ const App = () => {
     try {
       if (google) {
         const provider = new GoogleAuthProvider();
-        const userCredential = await signInWithPopup(auth, provider);
-        setUserId(userCredential.user.uid);
+        await signInWithPopup(auth, provider);
+        // onAuthStateChanged se encargará de verificar permisos y actualizar el estado
       } else {
-        const userCredential = await signInWithEmailAndPassword(
-          auth,
-          email,
-          password,
-        );
-        setUserId(userCredential.user.uid);
+        await signInWithEmailAndPassword(auth, email, password);
+        // onAuthStateChanged se encargará de verificar permisos y actualizar el estado
       }
-      setShowLogin(false);
     } catch (e) {
+      console.error('Login error:', e);
       setLoginError(e.message);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setUserId(null);
+      setUserName('');
+      setIsSuperAdmin(false);
+      setShowLogin(true);
+      setTab('dashboard');
+    } catch (error) {
+      console.error('Logout error:', error);
+      setMessage({ text: 'Error al cerrar sesión', type: 'error' });
     }
   };
 
@@ -1876,8 +1953,17 @@ const App = () => {
   } else if (!DEV_BYPASS_AUTH && !isSuperAdmin && isAuthReady) {
     contenido = (
       <div className="hf-page hf-flex-center" style={{minHeight: '100vh'}}>
-        <div className="hf-card hf-alert-error" style={{maxWidth: '500px'}}>
+        <div className="hf-card hf-alert-error" style={{maxWidth: '500px', textAlign: 'center'}}>
           <h2 className="text-2xl font-bold mb-4">Acceso Denegado</h2>
+          <p style={{marginBottom: 'var(--hf-space-lg)', color: 'var(--hf-text-secondary)'}}>
+            No tienes permisos para acceder a esta aplicación. Por favor, contacta al administrador.
+          </p>
+          <button 
+            className="hf-button hf-button-secondary" 
+            onClick={handleLogout}
+          >
+            Volver al Login
+          </button>
         </div>
       </div>
     );
@@ -1890,6 +1976,7 @@ const App = () => {
         onNavigate={setTab}
         isSuperAdmin={isSuperAdmin}
         onMassDelete={handleShowMassDelete}
+        onLogout={handleLogout}
       />
     );
   } else if (tab === 'portfolio') {
@@ -2937,8 +3024,8 @@ const App = () => {
     );
   }
 
-  // Mostrar login si no está autenticado
-  if (!DEV_BYPASS_AUTH && showLogin && isAuthReady && !userId) {
+  // Mostrar login si no está autenticado o aún no se verificó autenticación
+  if (!DEV_BYPASS_AUTH && (showLogin || !isAuthReady)) {
     return <LoginForm onLogin={handleLogin} error={loginError} />;
   }
 
