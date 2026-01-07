@@ -14,7 +14,6 @@ export const SUPER_ADMINS = [
 export const USER_NAMES = {
   '9dZMQNvgovSWE4lP7tOUNDzy6Md2': 'Albert Carrasquel',
   'T0Kh0eHZ05he8iqD6vEG2G2c7Rl2': 'Haydee Macias',
-  'dev-albert': 'Albert Carrasquel', // Modo desarrollo
 };
 
 // Nombres cortos para UI compacta

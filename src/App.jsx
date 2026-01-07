@@ -217,7 +217,7 @@ const exportInvestmentsToExcel = (transactions, investmentReport, metrics, filte
       tx.comisionMonto || 0,
       tx.montoTotal || 0,
       tx.moneda || 'N/A',
-      tx.usuario || 'N/A',
+      USER_NAMES[tx.usuarioId] || tx.usuario || 'N/A',
       tx.anulada ? 'SÍ' : 'NO'
     ]);
   });
@@ -281,7 +281,7 @@ const exportCashflowToExcel = (cashflows, metrics, filters) => {
       cf.monto || 0,
       cf.moneda || 'N/A',
       cf.medioPago || 'N/A',
-      cf.usuario || 'N/A',
+      USER_NAMES[cf.usuarioId] || cf.usuario || 'N/A',
       cf.anulada ? 'SÍ' : 'NO'
     ]);
   });
@@ -381,8 +381,11 @@ const App = () => {
   const [userName, setUserName] = useState(DEV_BYPASS_AUTH ? 'Dev Mode' : '');
 
   // (Filtros y vista se desactivaron por ahora para evitar variables sin usar)
-  // Nuevo estado para pestañas multitarea
-  const [tab, setTab] = useState('dashboard'); // 'dashboard', 'portfolio', 'inversiones', 'gastos', 'reportes'
+  // Nuevo estado para pestañas multitarea - persistir en localStorage
+  const [tab, setTab] = useState(() => {
+    // Recuperar tab guardado o usar 'dashboard' por defecto
+    return localStorage.getItem('homeflow-current-tab') || 'dashboard';
+  });
   
   // Dashboard states
   const [dashboardData, setDashboardData] = useState(null);
@@ -391,6 +394,11 @@ const App = () => {
   // Portfolio states
   const [portfolioData, setPortfolioData] = useState(null);
   const [portfolioLoading, setPortfolioLoading] = useState(true);
+
+  // Guardar tab actual en localStorage cuando cambia
+  useEffect(() => {
+    localStorage.setItem('homeflow-current-tab', tab);
+  }, [tab]);
 
   // Monthly checklist states
   const [monthlyChecklist, setMonthlyChecklist] = useState([]);
@@ -1230,6 +1238,8 @@ const App = () => {
       setTimeout(() => setSuccessMessage(null), 2000);
       setNewCashflow({ tipo: 'gasto', monto: '', moneda: '', fechaOperacion: '', categoria: '', descripcion: '' });
       setCashflowFieldErrors({});
+      // Scroll al inicio de la página
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       console.error('Error adding cashflow: ', err);
       setError('Error al guardar registro de gasto/ingreso. Revisa reglas de Firestore.');
