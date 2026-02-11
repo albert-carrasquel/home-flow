@@ -28,6 +28,7 @@ import ConfirmationModal from './components/ConfirmationModal';
 import TransactionItem from './components/TransactionItem';
 import { formatCurrency, sanitizeDecimal, sanitizeActivo, sanitizeNombre, getUniqueActivos, dateStringToTimestamp, getOccurredAtFromDoc } from './utils/formatters';
 import { calculateInvestmentReport } from './utils/reporting';
+import { handleFirestoreError } from './utils/errorHandling';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -47,17 +48,17 @@ const appId = rawAppId.replace(/[.:]/g, '-').replace(/\//g, '-');
 
 // Configuración de Firebase:
 // - Si __firebase_config existe (entorno "especial" tipo Canvas / Gemini), lo usamos.
-// - Si no existe (como en tu local o Firebase Hosting), usamos la config "normal" del proyecto.
+// - Si no existe, usamos variables de entorno (más seguro).
 const firebaseConfig =
   typeof __firebase_config !== 'undefined' && __firebase_config
     ? JSON.parse(__firebase_config)
     : {
-      apiKey: 'AIzaSyDqQN-Lf4xZInlqysBaFIwNG2uCGQ1Vde4',
-      authDomain: 'investment-manager-e47b6.firebaseapp.com',
-      projectId: 'investment-manager-e47b6',
-      storageBucket: 'investment-manager-e47b6.firebasestorage.app',
-      messagingSenderId: '471997247184',
-      appId: '1:471997247184:web:1a571d1cf28a8cfdd6b8d5',
+      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+      appId: import.meta.env.VITE_FIREBASE_APP_ID,
     };
 
 // Nota: __initial_auth_token puede inyectarse en entornos especiales; no se usa actualmente.
@@ -328,6 +329,10 @@ const App = () => {
   const [error, setError] = useState(null);
   // Replaced aggregate form error with per-field inline errors
   const [fieldErrors, setFieldErrors] = useState({});
+  // Loading states para prevenir doble submit
+  const [isSubmittingTransaction, setIsSubmittingTransaction] = useState(false);
+  const [isSubmittingCashflow, setIsSubmittingCashflow] = useState(false);
+  const [isSubmittingChecklist, setIsSubmittingChecklist] = useState(false);
   // Cashflow states
   const [cashflows, setCashflows] = useState([]);
   const [newCashflow, setNewCashflow] = useState({
@@ -1072,6 +1077,12 @@ const App = () => {
 
   const handleAddTransaction = async (e) => {
     e.preventDefault();
+    
+    // Prevenir doble submit
+    if (isSubmittingTransaction) {
+      return;
+    }
+    
     // Build per-field errors
     const errors = {};
     const assetSymbol = (newTransaction.activo || '').toUpperCase();
@@ -1129,6 +1140,32 @@ const App = () => {
         errors.activo = 'No hay activos registrados para el usuario seleccionado. No es posible registrar ventas.';
       } else if (!activosList.includes(assetSymbol)) {
         errors.activo = 'El activo seleccionado no está disponible para venta para este usuario.';
+      } else {
+        // CRÍTICO: Validar que hay suficiente cantidad disponible (prevenir venta en corto)
+        const cantidadVenta = parseFloat(newTransaction.cantidad);
+        if (!isNaN(cantidadVenta) && cantidadVenta > 0) {
+          // Calcular cantidad disponible para este activo/usuario/moneda
+          const transaccionesFiltradas = _transactions.filter(tx => 
+            !tx.anulada && 
+            tx.usuarioId === newTransaction.usuarioId &&
+            tx.activo === assetSymbol &&
+            tx.moneda === newTransaction.moneda
+          );
+          
+          // Aplicar FIFO para obtener posiciones abiertas
+          const reporteTemporal = calculateInvestmentReport(transaccionesFiltradas);
+          const posicionAbierta = reporteTemporal.posicionesAbiertas.find(pos => 
+            pos.activo === assetSymbol && 
+            pos.moneda === newTransaction.moneda &&
+            pos.usuarioId === newTransaction.usuarioId
+          );
+          
+          const cantidadDisponible = posicionAbierta ? parseFloat(posicionAbierta.cantidadRestante) : 0;
+          
+          if (cantidadVenta > cantidadDisponible) {
+            errors.cantidad = `No puedes vender ${cantidadVenta} ${assetSymbol}. Solo tienes ${cantidadDisponible.toFixed(8)} disponibles.`;
+          }
+        }
       }
     }
     // Exchange: requerido y validar opción
@@ -1144,10 +1181,15 @@ const App = () => {
       setFieldErrors(errors);
       return;
     }
-    // Normalizamos el activo antes de guardar
-    const cantidad = parseFloat(newTransaction.cantidad);
-    const precioUnitario = parseFloat(newTransaction.precioUnitario);
-    const totalOperacion = parseFloat(newTransaction.totalOperacion);
+    
+    // Activar estado de loading
+    setIsSubmittingTransaction(true);
+    
+    try {
+      // Normalizamos el activo antes de guardar
+      const cantidad = parseFloat(newTransaction.cantidad);
+      const precioUnitario = parseFloat(newTransaction.precioUnitario);
+      const totalOperacion = parseFloat(newTransaction.totalOperacion);
     
     // Calculate montoTotal (theoretical: cantidad * precioUnitario)
     const montoTotal = cantidad * precioUnitario;
@@ -1181,7 +1223,7 @@ const App = () => {
       // Anulación system
       anulada: false,
     };
-    try {
+    
       const transactionsPath = getTransactionsPath(appId);
       await addDoc(collection(db, transactionsPath), transactionToSave);
 
@@ -1207,7 +1249,11 @@ const App = () => {
       setFieldErrors({});
     } catch (e) {
       console.error('Error adding transaction: ', e);
-      setError('Error al agregar la transacción. Revisa las reglas de seguridad de Firestore.');
+      const userMessage = handleFirestoreError(e);
+      setError(userMessage);
+    } finally {
+      // Desactivar estado de loading
+      setIsSubmittingTransaction(false);
     }
   };
 
@@ -1222,6 +1268,12 @@ const App = () => {
 
   const handleAddCashflow = async (e) => {
     e.preventDefault();
+    
+    // Prevenir doble submit
+    if (isSubmittingCashflow) {
+      return;
+    }
+    
     const errors = {};
     if (!newCashflow.tipo || !['gasto', 'ingreso'].includes(newCashflow.tipo)) {
       errors.tipo = 'Selecciona tipo: gasto o ingreso.';
@@ -1246,8 +1298,11 @@ const App = () => {
       setCashflowFieldErrors(errors);
       return;
     }
+    
+    setIsSubmittingCashflow(true);
 
-    const cashflowToSave = {
+    try {
+      const cashflowToSave = {
       usuarioId: newCashflow.usuarioId || userId || 'dev-albert',
       tipo: newCashflow.tipo,
       monto: parseFloat(newCashflow.monto),
@@ -1271,7 +1326,16 @@ const App = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
       console.error('Error adding cashflow: ', err);
-      setError('Error al guardar registro de gasto/ingreso. Revisa reglas de Firestore.');
+      const userMessage = handleFirestoreError(err);
+      setError(userMessage);
+    } finally {
+      setIsSubmittingCashflow(false);
+    }
+    } catch (err) {
+      console.error('Error adding cashflow: ', err);
+      const userMessage = handleFirestoreError(err);
+      setError(userMessage);
+      setIsSubmittingCashflow(false);
     }
   };
 
@@ -1483,6 +1547,13 @@ const App = () => {
     
     if (!db) return;
     
+    // Prevenir doble submit
+    if (isSubmittingChecklist) {
+      return;
+    }
+    
+    setIsSubmittingChecklist(true);
+    
     try {
       // 1. Crear el registro de cashflow normal
       const cashflowPath = getCashflowPath(appId);
@@ -1544,6 +1615,8 @@ const App = () => {
     } catch (err) {
       console.error('Error registering monthly expense:', err);
       setError(`Error al registrar ${template.nombre}.`);
+    } finally {
+      setIsSubmittingChecklist(false);
     }
   };
 
@@ -2279,10 +2352,10 @@ const App = () => {
             </div>
             <button
               type="submit"
-              disabled={newTransaction.tipoOperacion === 'venta' && activosList.length === 0}
+              disabled={isSubmittingTransaction || (newTransaction.tipoOperacion === 'venta' && activosList.length === 0)}
               className="hf-button hf-button-primary w-full"
               style={{fontSize: '1.125rem', padding: '1rem'}}
-            >Agregar Transacción</button>
+            >{isSubmittingTransaction ? 'Guardando...' : 'Agregar Transacción'}</button>
           </form>
         </div>
       </div>
@@ -2412,10 +2485,11 @@ const App = () => {
                         <button
                           type="button"
                           onClick={() => handleRegisterMonthlyExpense(item)}
+                          disabled={isSubmittingChecklist}
                           className="hf-button hf-button-primary"
                           style={{padding: '0.5rem 1rem', fontSize: '0.875rem'}}
                         >
-                          Enter
+                          {isSubmittingChecklist ? 'Guardando...' : 'Enter'}
                         </button>
                       </div>
                     )}
@@ -2642,7 +2716,12 @@ const App = () => {
               <input name="descripcion" value={newCashflow.descripcion} onChange={handleCashflowInputChange} placeholder="Detalle breve..." className="hf-input" />
             </div>
 
-            <button type="submit" className="hf-button hf-button-primary w-full" style={{fontSize: '1rem', padding: '0.875rem'}}>Guardar</button>
+            <button 
+              type="submit" 
+              disabled={isSubmittingCashflow}
+              className="hf-button hf-button-primary w-full" 
+              style={{fontSize: '1rem', padding: '0.875rem'}}
+            >{isSubmittingCashflow ? 'Guardando...' : 'Guardar'}</button>
           </form>
 
           <div className="hf-divider"></div>

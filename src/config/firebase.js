@@ -13,17 +13,17 @@ export const appId = rawAppId.replace(/[.:]/g, '-').replace(/\//g, '-');
 
 // --- FIREBASE CONFIG ---
 // - Si __firebase_config existe (entorno "especial" tipo Canvas / Gemini), lo usamos.
-// - Si no existe (como en tu local o Firebase Hosting), usamos la config "normal" del proyecto.
+// - Si no existe, usamos variables de entorno (más seguro).
 const firebaseConfig =
   typeof __firebase_config !== 'undefined' && __firebase_config
     ? JSON.parse(__firebase_config)
     : {
-      apiKey: 'AIzaSyDqQN-Lf4xZInlqysBaFIwNG2uCGQ1Vde4',
-      authDomain: 'investment-manager-e47b6.firebaseapp.com',
-      projectId: 'investment-manager-e47b6',
-      storageBucket: 'investment-manager-e47b6.firebasestorage.app',
-      messagingSenderId: '471997247184',
-      appId: '1:471997247184:web:1a571d1cf28a8cfdd6b8d5',
+      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+      appId: import.meta.env.VITE_FIREBASE_APP_ID,
     };
 
 // --- INITIALIZATION ---

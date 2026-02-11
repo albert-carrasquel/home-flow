@@ -131,9 +131,12 @@ function applyFIFOToAsset(transactions) {
         });
       }
       
-      // Si quedó cantidad por vender sin compra asociada, ignoramos (venta en corto, no contemplada)
+      // Si quedó cantidad por vender sin compra asociada, es una venta en corto
       if (cantidadPorVender > 0.0001) {
-        console.warn(`Venta sin compra previa detectada: ${tx.activo}, cantidad: ${cantidadPorVender}`);
+        // CRÍTICO: Esto indica un error de datos - no debería ocurrir si la validación frontend funciona
+        console.error(`⚠️ VENTA EN CORTO DETECTADA: ${tx.activo}, cantidad sin respaldo: ${cantidadPorVender}`);
+        // Lanzar error para que sea visible en la UI
+        throw new Error(`Venta en corto detectada para ${tx.activo}: intentas vender ${cantidadPorVender} unidades sin compra previa. Verifica tus transacciones.`);
       }
     }
   });
