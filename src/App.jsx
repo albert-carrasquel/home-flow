@@ -958,10 +958,17 @@ const App = () => {
         setHistoryLoading(true);
         const history = [];
         const now = new Date();
+        const minDate = new Date(2026, 1, 1); // Febrero 2026 (mes 1 = febrero)
         
         // Generar últimos 3 meses (excluyendo el actual)
         for (let i = 1; i <= 3; i++) {
           const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          
+          // Saltar meses anteriores a febrero 2026
+          if (date < minDate) {
+            continue;
+          }
+          
           const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
           const monthName = date.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
           
@@ -2308,7 +2315,14 @@ const App = () => {
               <p style={{marginTop: 'var(--hf-space-sm)'}}>Cargando checklist...</p>
             </div>
           ) : (
-            <div className="hf-list">
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(2, 1fr)',
+              gap: 'var(--hf-space-md)',
+              '@media (max-width: 768px)': {
+                gridTemplateColumns: '1fr'
+              }
+            }}>
               {monthlyChecklist.map((item) => (
                 <div 
                   key={item.id} 
@@ -2401,7 +2415,7 @@ const App = () => {
                           className="hf-button hf-button-primary"
                           style={{padding: '0.5rem 1rem', fontSize: '0.875rem'}}
                         >
-                          Registrar
+                          Enter
                         </button>
                       </div>
                     )}
