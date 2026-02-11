@@ -170,30 +170,36 @@ Documento de seguimiento para implementación de mejoras prioritarias en HomeFlo
 - [ ] Filtros persistentes (guardar búsquedas favoritas)
 
 ### ✅ 11. Checklist de Gastos Mensuales ⭐⭐⭐⭐⭐
-**Estado**: ✅ COMPLETADO (2026-01-06)
+**Estado**: ✅ COMPLETADO (2026-01-06) | 🔄 ACTUALIZADO (2026-02-11)
 **Commit base**: `2ceb75f` (fix: permitir números en símbolos y nombres de activos)
-**Commit final**: `e8c1845` (feat: agregar botón Modificar y sincronización con últimos registros)
+**Commit inicial**: `e8c1845` (feat: agregar botón Modificar y sincronización con últimos registros)
+**Commit actualización**: `1a2e25c` (feat: actualizar lista de gastos mensuales y mejorar UX)
 **Problema**: Gastos recurrentes mensuales requieren carga manual repetitiva cada mes.
 **Solución**: Lista de templates hardcodeados con checklist mensual + historial
-- [x] Templates hardcodeados (7 gastos comunes)
-- [x] UI en tab Gastos/Ingresos con lista mensual
+- [x] Templates hardcodeados expandidos (15 gastos: 9 servicios + 6 tarjetas)
+- [x] UI en tab Gastos/Ingresos con lista mensual en 2 columnas
 - [x] Sistema de registro rápido (monto + click)
 - [x] Items se tachan al completar
+- [x] Botón "Enter" para registrar gastos
 - [x] Botón "Modificar" para corregir montos erróneos
 - [x] Sincronización con "Últimos 5 registros"
 - [x] Reset automático al cambiar de mes
 - [x] Estado compartido entre usuarios (Albert y Haydee)
 - [x] Restricción: un gasto solo una vez por mes
 - [x] Historial colapsable de meses anteriores con detección de faltantes
+- [x] Historial limitado a partir de febrero 2026 (sin acumulación histórica)
 **Fecha inicio**: 2026-01-06 (tarde)
-**Fecha fin**: 2026-01-06 (tarde)
+**Fecha actualización**: 2026-02-11 (tarde)
 **Implementación**:
 - Collection Firestore: `monthly-checklist-{YYYY-MM}/{templateId}`
-- Templates: Alquiler, Luz, Gas, Agua, Internet, Expensas, Celular
+- Templates actualizados: 
+  - Servicios (9): Alquiler, Luz, Gas, Agua, Internet, Expensas, Telefono, Estacionamiento, Sonia
+  - Tarjetas (6): Visa Haydee, Amex Haydee, Visa Alb Santander, Amex Alb Santander, Visa Galicia, Master Galicia
+- Layout: Grid de 2 columnas para mejor visualización
 - Estados: `monthlyChecklist`, `checklistLoading`, `currentMonth`, `monthlyExpenseAmounts`, `editingChecklistItem`, `checklistHistory`, `showHistory`
 - useEffect: Detecta cambio de mes cada minuto y resetea automáticamente
-- UI Mes actual: Lista con items pendientes/completados
-- UI Historial: Sección colapsable con últimos 3 meses
+- UI Mes actual: Lista con items pendientes/completados en 2 columnas
+- UI Historial: Sección colapsable con últimos 3 meses (desde feb 2026)
   - Detecta pagos faltantes automáticamente
   - Permite pagar atrasados con botón "Pagar ahora"
   - Badge con contador de pendientes totales
