@@ -29,6 +29,8 @@ import TransactionItem from './components/TransactionItem';
 import { formatCurrency, sanitizeDecimal, sanitizeActivo, sanitizeNombre, getUniqueActivos, dateStringToTimestamp, getOccurredAtFromDoc } from './utils/formatters';
 import { calculateInvestmentReport } from './utils/reporting';
 import { handleFirestoreError } from './utils/errorHandling';
+import { updateMonthlyExpenseAtomic, annulCashflowAtomic, annulTransactionAtomic } from './utils/transactions';
+import { validateInvestmentTransaction, validateCashflowTransaction } from './utils/advancedValidations';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { Trash2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -333,6 +335,11 @@ const App = () => {
   const [isSubmittingTransaction, setIsSubmittingTransaction] = useState(false);
   const [isSubmittingCashflow, setIsSubmittingCashflow] = useState(false);
   const [isSubmittingChecklist, setIsSubmittingChecklist] = useState(false);
+  
+  // Estado para trackear cambios no guardados en formularios
+  const [hasUnsavedTransactionChanges, setHasUnsavedTransactionChanges] = useState(false);
+  const [hasUnsavedCashflowChanges, setHasUnsavedCashflowChanges] = useState(false);
+  
   // Cashflow states
   const [cashflows, setCashflows] = useState([]);
   const [newCashflow, setNewCashflow] = useState({
@@ -511,6 +518,26 @@ const App = () => {
 
     return () => unsubscribe();
   }, [auth]);
+
+
+  // 1.6. Warning para cambios no guardados antes de cerrar la página
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
+      // Solo alertar si hay cambios pendientes en algún formulario
+      if (hasUnsavedTransactionChanges || hasUnsavedCashflowChanges) {
+        e.preventDefault();
+        // El mensaje personalizado no se muestra en navegadores modernos por seguridad,
+        // pero se muestra un mensaje genérico del navegador
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [hasUnsavedTransactionChanges, hasUnsavedCashflowChanges]);
 
 
   // 2. Suscripción en tiempo real a las transacciones
@@ -1040,6 +1067,9 @@ const App = () => {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
 
+    // Marcar que hay cambios no guardados
+    setHasUnsavedTransactionChanges(true);
+
     // If IME composition is in progress, set raw value and skip sanitization
     if (compositionRef.current) {
       setNewTransaction((prev) => ({ ...prev, [name]: value }));
@@ -1182,6 +1212,26 @@ const App = () => {
       return;
     }
     
+    // ===== VALIDACIONES AVANZADAS =====
+    const advancedValidation = validateInvestmentTransaction(newTransaction);
+    if (!advancedValidation.valid) {
+      // Merge advanced errors with existing errors
+      setFieldErrors({ ...errors, ...advancedValidation.errors });
+      return;
+    }
+    
+    // Si hay warnings, mostrarlos al usuario (no bloqueantes)
+    if (Object.keys(advancedValidation.warnings).length > 0) {
+      const warningsText = Object.values(advancedValidation.warnings).join('\n\n');
+      const confirm = window.confirm(
+        `Se detectaron las siguientes advertencias:\n\n${warningsText}\n\n¿Deseas continuar con la operación de todas formas?`
+      );
+      if (!confirm) {
+        return; // Usuario cancela
+      }
+    }
+    // ===================================
+    
     // Activar estado de loading
     setIsSubmittingTransaction(true);
     
@@ -1247,6 +1297,9 @@ const App = () => {
         fechaTransaccion: '',
       });
       setFieldErrors({});
+      
+      // Limpiar bandera de cambios no guardados después de guardar exitosamente
+      setHasUnsavedTransactionChanges(false);
     } catch (e) {
       console.error('Error adding transaction: ', e);
       const userMessage = handleFirestoreError(e);
@@ -1260,6 +1313,10 @@ const App = () => {
   // --- CASHFLOW HANDLERS ---
   const handleCashflowInputChange = (e) => {
     const { name, value } = e.target;
+    
+    // Marcar que hay cambios no guardados
+    setHasUnsavedCashflowChanges(true);
+    
     let sanitized = value;
     if (name === 'monto') sanitized = sanitizeDecimal(value, 4);
     setNewCashflow((prev) => ({ ...prev, [name]: sanitized }));
@@ -1299,6 +1356,25 @@ const App = () => {
       return;
     }
     
+    // ===== VALIDACIONES AVANZADAS =====
+    const advancedValidation = validateCashflowTransaction(newCashflow);
+    if (!advancedValidation.valid) {
+      setCashflowFieldErrors({ ...errors, ...advancedValidation.errors });
+      return;
+    }
+    
+    // Si hay warnings, mostrarlos al usuario (no bloqueantes)
+    if (Object.keys(advancedValidation.warnings).length > 0) {
+      const warningsText = Object.values(advancedValidation.warnings).join('\n\n');
+      const confirm = window.confirm(
+        `Se detectaron las siguientes advertencias:\n\n${warningsText}\n\n¿Deseas continuar de todas formas?`
+      );
+      if (!confirm) {
+        return;
+      }
+    }
+    // ===================================
+    
     setIsSubmittingCashflow(true);
 
     try {
@@ -1322,6 +1398,10 @@ const App = () => {
       setTimeout(() => setSuccessMessage(null), 2000);
       setNewCashflow({ tipo: 'gasto', monto: '', moneda: '', fechaOperacion: '', categoria: '', descripcion: '' });
       setCashflowFieldErrors({});
+      
+      // Limpiar bandera de cambios no guardados después de guardar exitosamente
+      setHasUnsavedCashflowChanges(false);
+      
       // Scroll al inicio de la página
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
@@ -1639,43 +1719,44 @@ const App = () => {
     if (!db || !template.cashflowId) return;
     
     try {
-      // 1. Actualizar el cashflow existente
+      // Usar transacción atómica para prevenir race conditions
       const cashflowPath = getCashflowPath(appId);
-      const cashflowRef = doc(db, cashflowPath, template.cashflowId);
-      
-      // Des-anular si estaba anulado y actualizar monto
-      await updateDoc(cashflowRef, {
-        monto: newAmount,
-        anulada: false, // Des-anular automáticamente al modificar
-        updatedAt: serverTimestamp()
-      });
-      
-      // 2. Actualizar el checklist
       const checklistPath = getMonthlyChecklistPath(appId, currentMonth);
       const checklistDocId = `${currentMonth}-${template.id}`;
-      await updateDoc(doc(db, checklistPath, checklistDocId), {
-        amount: newAmount
-      });
       
-      // 3. Actualizar estado local
+      const result = await updateMonthlyExpenseAtomic(
+        db,
+        cashflowPath,
+        checklistPath,
+        template.cashflowId,
+        checklistDocId,
+        newAmount
+      );
+      
+      if (!result.success) {
+        throw new Error(result.error);
+      }
+      
+      // Actualizar estado local
       setMonthlyChecklist(prev => prev.map(item =>
         item.id === template.id
           ? { ...item, amount: newAmount }
           : item
       ));
       
-      // 4. Salir del modo edición
+      // Salir del modo edición
       setEditingChecklistItem(null);
       setMonthlyExpenseAmounts(prev => ({
         ...prev,
         [template.id]: ''
       }));
       
-      setSuccessMessage(`✅ ${template.nombre} actualizado y habilitado exitosamente`);
+      setSuccessMessage(`✅ ${template.nombre} actualizado exitosamente`);
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
       console.error('Error updating monthly expense:', err);
-      setError(`Error al actualizar ${template.nombre}.`);
+      const userMessage = handleFirestoreError(err);
+      setError(userMessage);
     }
   };
 

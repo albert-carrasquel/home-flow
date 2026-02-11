@@ -100,3 +100,75 @@ export const categorizefinancialError = (errorMessage) => {
   
   return { isCritical, suggestion };
 };
+
+/**
+ * Retry logic con exponential backoff
+ * Reintenta operaciones que fallan temporalmente
+ * 
+ * @param {Function} operation - Función async a ejecutar
+ * @param {number} maxRetries - Número máximo de reintentos (default: 3)
+ * @param {number} baseDelay - Delay base en ms (default: 1000)
+ * @returns {Promise<any>} - Resultado de la operación
+ */
+export const withRetry = async (operation, maxRetries = 3, baseDelay = 1000) => {
+  let lastError;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      const errorCode = error?.code || '';
+      
+      // Solo reintentar en errores temporales/de red
+      const retriableErrors = [
+        'unavailable',
+        'deadline-exceeded',
+        'network-error',
+        'aborted',
+        'internal',
+        'resource-exhausted'
+      ];
+      
+      const isRetriable = retriableErrors.some(code => errorCode.includes(code));
+      
+      if (!isRetriable || attempt === maxRetries - 1) {
+        // No reintentar si es error permanente o último intento
+        throw error;
+      }
+      
+      // Exponential backoff: 1s, 2s, 4s
+      const delay = baseDelay * Math.pow(2, attempt);
+      console.warn(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms. Error: ${errorCode}`);
+      
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError;
+};
+
+/**
+ * Wrapper completo: retry + error handling
+ * @param {Function} operation - Función async a ejecutar
+ * @param {object} options - Opciones {maxRetries, baseDelay, onSuccess, onError}
+ * @returns {Promise<{success: boolean, data?: any, error?: string}>}
+ */
+export const safeOperation = async (operation, options = {}) => {
+  const {
+    maxRetries = 3,
+    baseDelay = 1000,
+    onSuccess = null,
+    onError = null
+  } = options;
+  
+  try {
+    const result = await withRetry(operation, maxRetries, baseDelay);
+    if (onSuccess) onSuccess(result);
+    return { success: true, data: result };
+  } catch (error) {
+    const errorMessage = handleFirestoreError(error);
+    if (onError) onError(errorMessage);
+    return { success: false, error: errorMessage };
+  }
+};
